@@ -28,13 +28,13 @@ public class ServerBusinessHandler extends SimpleChannelInboundHandler<Message> 
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
-        log.info("ServerBusinessHandler channelActive invoke, [{}] connected: {}", channelId(ctx), ctx.channel().remoteAddress());
+        log.info("ServerBusinessHandler channelActive invoke, {} connected: {}", channelId(ctx), ctx.channel().remoteAddress());
         ctx.fireChannelActive();
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
-        log.info("ServerBusinessHandler channelInactive invoke, [{}] disconnected: {} user={}", channelId(ctx), ctx.channel().remoteAddress(),
+        log.info("ServerBusinessHandler channelInactive invoke, {} disconnected: {} user={}", channelId(ctx), ctx.channel().remoteAddress(),
                 ctx.channel().attr(ChannelSessionManager.USER_ID).get());
         sessionManager.unbind(ctx.channel());
         ctx.fireChannelInactive();
@@ -44,40 +44,44 @@ public class ServerBusinessHandler extends SimpleChannelInboundHandler<Message> 
     protected void channelRead0(ChannelHandlerContext ctx, Message msg) {
         // ③ SimpleChannelInboundHandler 会在方法结束后自动 release 原始消息。
         String userId = ctx.channel().attr(ChannelSessionManager.USER_ID).get();
-        log.info("ServerBusinessHandler channelRead0 invoke, [{}] recv user={} msg={}", channelId(ctx), userId, msg);
+        if (msg.getType() != null && msg.getType().isHeartbeat()) {
+            log.debug("ServerBusinessHandler channelRead0 invoke, {} recv user={} msg={}", channelId(ctx), userId, msg);
+        } else {
+            log.info("ServerBusinessHandler channelRead0 invoke, {} recv user={} msg={}", channelId(ctx), userId, msg);
+        }
         if (msg.getType() == null) {
-            log.warn("ServerBusinessHandler channelRead0 invoke, [{}] reject: type is required, msg={}", channelId(ctx), msg);
+            log.warn("ServerBusinessHandler channelRead0 invoke, {} reject: type is required, msg={}", channelId(ctx), msg);
             reply(ctx, Message.of(MessageEnum.ERROR, "type is required"));
             return;
         }
         switch (msg.getType()) {
             case LOGIN -> {
                 if (msg.getFrom() == null || msg.getFrom().isBlank()) {
-                    log.warn("ServerBusinessHandler channelRead0 invoke, [{}] login rejected: from is required", channelId(ctx));
+                    log.warn("ServerBusinessHandler channelRead0 invoke, {} login rejected: from is required", channelId(ctx));
                     reply(ctx, Message.of(MessageEnum.ERROR, "from is required"));
                     return;
                 }
                 // 真实项目这里通常是查库 / 校验 token，是阻塞操作，所以业务 Handler 要放在业务线程池。
                 sessionManager.bind(msg.getFrom(), ctx.channel());
-                log.info("ServerBusinessHandler channelRead0 invoke, [{}] login: {}", channelId(ctx), msg.getFrom());
+                log.info("ServerBusinessHandler channelRead0 invoke, {} login: {}", channelId(ctx), msg.getFrom());
                 reply(ctx, Message.of(MessageEnum.LOGIN_OK, "welcome " + msg.getFrom()));
             }
             case PING -> reply(ctx, Message.of(MessageEnum.PONG, null));
             case CHAT -> {
                 if (userId == null) {
-                    log.warn("ServerBusinessHandler channelRead0 invoke, [{}] chat rejected: not logged in", channelId(ctx));
+                    log.warn("ServerBusinessHandler channelRead0 invoke, {} chat rejected: not logged in", channelId(ctx));
                     reply(ctx, Message.of(MessageEnum.ERROR, "login first"));
                     return;
                 }
                 msg.setFrom(userId);
-                log.info("ServerBusinessHandler channelRead0 invoke, [{}] chat {} -> {}: {}", channelId(ctx), userId, msg.getTo(), msg.getContent());
+                log.info("ServerBusinessHandler channelRead0 invoke, {} chat {} -> {}: {}", channelId(ctx), userId, msg.getTo(), msg.getContent());
                 if (!sessionManager.send(msg.getTo(), msg)) {
-                    log.info("ServerBusinessHandler channelRead0 invoke, [{}] chat {} -> {} failed: target offline", channelId(ctx), userId, msg.getTo());
+                    log.info("ServerBusinessHandler channelRead0 invoke, {} chat {} -> {} failed: target offline", channelId(ctx), userId, msg.getTo());
                     reply(ctx, Message.of(MessageEnum.ERROR, msg.getTo() + " is offline"));
                 }
             }
             default -> {
-                log.warn("ServerBusinessHandler channelRead0 invoke, [{}] unsupported type {}", channelId(ctx), msg.getType());
+                log.warn("ServerBusinessHandler channelRead0 invoke, {} unsupported type {}", channelId(ctx), msg.getType());
                 reply(ctx, Message.of(MessageEnum.ERROR, "unsupported type " + msg.getType()));
             }
         }
@@ -87,7 +91,7 @@ public class ServerBusinessHandler extends SimpleChannelInboundHandler<Message> 
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof IdleStateEvent) {
             // ⑥ 读空闲：客户端既没发业务数据也没发心跳，认为已经失联，踢掉。
-            log.info("ServerBusinessHandler userEventTriggered invoke, [{}] reader idle, close: {} user={}", channelId(ctx), ctx.channel().remoteAddress(),
+            log.info("ServerBusinessHandler userEventTriggered invoke, {} reader idle, close: {} user={}", channelId(ctx), ctx.channel().remoteAddress(),
                     ctx.channel().attr(ChannelSessionManager.USER_ID).get());
             ctx.close();
         } else {
@@ -98,17 +102,21 @@ public class ServerBusinessHandler extends SimpleChannelInboundHandler<Message> 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         // ② 最后一个入站 Handler 兜底处理异常，否则会传到 Tail 只打一条 warn。
-        log.error("ServerBusinessHandler exceptionCaught invoke, [{}] channel error: {} user={}", channelId(ctx), ctx.channel().remoteAddress(),
+        log.error("ServerBusinessHandler exceptionCaught invoke, {} channel error: {} user={}", channelId(ctx), ctx.channel().remoteAddress(),
                 ctx.channel().attr(ChannelSessionManager.USER_ID).get(), cause);
         ctx.close();
     }
 
     private void reply(ChannelHandlerContext ctx, Message message) {
-        log.info("ServerBusinessHandler reply invoke, [{}] reply {}", channelId(ctx), message);
+        if (message.getType().isHeartbeat()) {
+            log.debug("ServerBusinessHandler reply invoke, {} reply {}", channelId(ctx), message);
+        } else {
+            log.info("ServerBusinessHandler reply invoke, {} reply {}", channelId(ctx), message);
+        }
         // ⑤ 写失败时记录原因并关闭连接。
         ctx.writeAndFlush(message).addListener((ChannelFuture f) -> {
             if (!f.isSuccess()) {
-                log.warn("ServerBusinessHandler reply invoke, [{}] reply failed, close: {}", channelId(ctx), message, f.cause());
+                log.warn("ServerBusinessHandler reply invoke, {} reply failed, close: {}", channelId(ctx), message, f.cause());
                 f.channel().close();
             }
         });

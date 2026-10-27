@@ -1,5 +1,6 @@
 package deepblue.inaction_02_springboot.handler.inbound;
 
+import com.alibaba.fastjson.JSON;
 import deepblue.inaction_02_springboot.model.Message;
 import deepblue.inaction_02_springboot.model.MessageEnum;
 import io.netty.channel.ChannelHandlerContext;
@@ -27,7 +28,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        log.info("ClientHandler channelActive invoke, [{}] {} connected: {} -> {}", channelId(ctx), userId,
+        log.info("ClientHandler channelActive invoke, {} {} connected: {} -> {}", channelId(ctx), userId,
                 ctx.channel().localAddress(), ctx.channel().remoteAddress());
         super.channelActive(ctx);
     }
@@ -37,10 +38,10 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
         if (msg.getType() == MessageEnum.KICKED) {
             kicked = true;
         }
-        if (msg.getType() == MessageEnum.PONG) {
-            log.info("ClientHandler channelRead0 invoke, [{}] << {}", channelId(ctx), msg);
+        if (msg.getType() != null && msg.getType().isHeartbeat()) {
+            log.debug("ClientHandler channelRead0 invoke, {} << {}", channelId(ctx), JSON.toJSONString(msg));
         } else {
-            log.info("ClientHandler channelRead0 invoke, [{}] << {}", channelId(ctx), msg);
+            log.info("ClientHandler channelRead0 invoke, {} << {}", channelId(ctx), JSON.toJSONString(msg));
         }
     }
 
@@ -48,7 +49,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof IdleStateEvent e && e.state() == IdleState.WRITER_IDLE) {
             // ⑥ 写空闲：一段时间没发数据，主动发心跳，防止被服务端的读空闲踢掉。
-            log.info("ClientHandler userEventTriggered invoke, [{}] writer idle, send PING", channelId(ctx));
+            log.debug("ClientHandler userEventTriggered invoke, {} writer idle, send PING", channelId(ctx));
             ctx.writeAndFlush(new Message(MessageEnum.PING, userId, null, null));
         } else {
             super.userEventTriggered(ctx, evt);
@@ -59,16 +60,16 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
     public void channelInactive(ChannelHandlerContext ctx) {
         if (kicked) {
             // ⑥ 被踢下线是服务端的主动决定，重连只会把对方再踢掉，所以不重连。
-            log.warn("ClientHandler channelInactive invoke, [{}] kicked offline, will not reconnect (type quit to exit)", channelId(ctx));
+            log.warn("ClientHandler channelInactive invoke, {} kicked offline, will not reconnect (type quit to exit)", channelId(ctx));
             return;
         }
-        log.info("ClientHandler channelInactive invoke, [{}] disconnected", channelId(ctx));
+        log.info("ClientHandler channelInactive invoke, {} disconnected", channelId(ctx));
         onDisconnected.run();
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        log.error("ClientHandler exceptionCaught invoke, [{}] channel error", channelId(ctx), cause);
+        log.error("ClientHandler exceptionCaught invoke, {} channel error", channelId(ctx), cause);
         ctx.close();
     }
 

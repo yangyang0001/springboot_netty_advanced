@@ -1693,7 +1693,7 @@ Netty:
 		    · 关闭: stop() 中先关 serverChannel, 再依次 shutdownGracefully boss / worker / biz。
 		- 运行:
 		    1. 启动 NettyAdvancedApplication (HTTP 8080, TCP 9000);
-		    2. 启动两个 MineNettyClient, 程序参数分别为 tom、jerry; 在 tom 的控制台输入 "jerry hello";
+		    2. 启动两个 MineNettyClient, 程序参数分别为 tom、jerry; 在 jerry 的控制台输入一行 JSON: {"content":"Hello World","to":"tom","type":"CHAT"} (from 自动填为 jerry);
 		    3. curl http://localhost:8080/netty/online
 		       curl -X POST "http://localhost:8080/netty/push?to=jerry&content=hi"
 		       curl -X POST "http://localhost:8080/netty/broadcast?content=notice"

@@ -47,12 +47,13 @@ Spring Boot + Netty 使用流程 (deepblue.inaction_02_springboot)
 	│   ├── Message                        type / from / to / content
 	│   └── MessageType                    消息类型枚举
 	└── client
-	    ├── MineNettyClient                独立 main 客户端 (不依赖 Spring), 控制台输入 "<to> <content>" 发消息
+	    ├── MineNettyClient                独立 main 客户端 (不依赖 Spring), 控制台每行输入一条 JSON 消息 (格式同线上协议)
 	    └── NettyClientInitializer         客户端 Pipeline 组装, 与服务端对称
 
 	相关文件:
 	    src/main/resources/application.properties        netty.server.* 配置
 	    src/test/java/deepblue/NettyAdvancedApplicationTest  集成测试
+	    scripts/netty-build.cmd / netty-server.cmd / netty-client.cmd  终端启动脚本 (见 五、方式三)
 
 
 三、整体流程
@@ -127,7 +128,8 @@ Spring Boot + Netty 使用流程 (deepblue.inaction_02_springboot)
 	        ⑤ GET /netty/online → 包含 tom、jerry
 	        ⑥ POST /netty/push?to=jerry → 返回 sent=true, jerry 收到 PUSH
 	        ⑦ 两个连接先后以 spike 登录 → 旧连接收到 KICKED 后被关闭, 新连接仍能收到 PUSH
-	    预期: Tests run: 2, Failures: 0, Errors: 0
+	    另有 MineNettyClientTest (纯单元测试, 不启动容器): 验证控制台 JSON 输入的解析和各种非法输入的拒绝。
+	    预期: NettyAdvancedApplicationTest 2 个、MineNettyClientTest 5 个, 全部通过 (Failures: 0, Errors: 0)
 
 	方式二: 手动联调 (IDEA 中操作)
 	    1. 启动服务端:
@@ -140,16 +142,31 @@ Spring Boot + Netty 使用流程 (deepblue.inaction_02_springboot)
 	        再复制一个运行配置, Program arguments 填 tom
 	        (第二个参数可选, 为服务端 TCP 端口, 默认 9000, 例如: tom 19000)
 	        IDEA 中同一个 main 要运行两份, 需在运行配置里勾选 Modify options → Allow multiple instances
-	        预期: 两个控制台都打印 << Message(type=LOGIN_OK, ... content=welcome xxx)
+	        预期: 两个控制台都打印 << {"content":"welcome xxx","from":"server","type":"LOGIN_OK"}
 	              服务端打印 connected / login: jerry / login: tom
 
-	    3. 点对点聊天: 在 tom 的控制台输入
-	        jerry hello from tom
-	        预期: jerry 控制台打印 << Message(type=CHAT, from=tom, to=jerry, content=hello from tom)
+	    控制台输入规则 (MineNettyClient.parseInput):
+	        · 每行一条 JSON 对象, 字段: type / to / content;
+	        · type 只能是 CHAT 或 PING (不区分大小写), LOGIN 由连接成功后自动发送, 其余类型只能由服务端发出;
+	        · from 不用填, 自动填为发送者 (当前用户); 即使填了别人也会被覆盖 (打一条 WARN), 不能冒充;
+	        · CHAT 必须有 to 和 content;
+	        · 不合法时打印 WARN "invalid input: ... -> 原因" 和用法提示, 不会发出去。
+
+	    3. 点对点聊天: 在 jerry 的控制台输入
+	        {"content":"Hello World","to":"tom","type":"CHAT"}
+	        预期: jerry 控制台打印 >> {"content":"Hello World","from":"jerry","to":"tom","type":"CHAT"}
+	              tom 控制台打印   << {"content":"Hello World","from":"jerry","to":"tom","type":"CHAT"}
 
 	    4. 对方离线: 在 tom 的控制台输入
-	        nobody hi
-	        预期: tom 控制台打印 << Message(type=ERROR, ... content=nobody is offline)
+	        {"content":"hi","to":"nobody","type":"CHAT"}
+	        预期: tom 控制台打印 << {"content":"nobody is offline","from":"server","type":"ERROR"}
+
+	    4.1 输入校验: 在 tom 的控制台依次输入
+	        jerry hello                                                   → invalid input: ... -> not a JSON object
+	        {"content":"x","type":"PUSH"}                                 → type PUSH can not be sent from console
+	        {"to":"jerry","type":"CHAT"}                                  → CHAT requires content
+	        {"content":"hi","from":"jerry","to":"jerry","type":"CHAT"}    → WARN from=jerry ignored, 实际以 from=tom 发出
+	        {"type":"PING"}                                               → 打印 >> {"from":"tom","type":"PING"}; 收到的 PONG 是 debug 日志, 默认不显示
 
 	    5. HTTP 接口 (PowerShell 中用 curl.exe, 因为 curl 是 Invoke-WebRequest 的别名):
 	        curl.exe http://localhost:8080/netty/online
@@ -160,7 +177,9 @@ Spring Boot + Netty 使用流程 (deepblue.inaction_02_springboot)
 	            预期: {"sent":2}, tom 和 jerry 都收到 PUSH notice
 
 	    6. 心跳: 两个客户端都不输入, 等待 20s 以上
-	        预期: 连接一直保持 (客户端每 20s 自动发 PING, 服务端回 PONG, PONG 不打印), 服务端不会踢人。
+	        预期: 连接一直保持 (客户端每 20s 自动发 PING, 服务端回 PONG), 服务端不会踢人。
+	        心跳相关日志 (PING / PONG 的收发、编解码) 都是 debug 级别, 默认看不到; 想观察时服务端加启动参数
+	        --logging.level.deepblue.inaction_02_springboot=DEBUG
 
 	    7. 读空闲踢人: 用一个不发心跳的客户端连上 (例如 telnet 127.0.0.1 9000, 什么都不输入), 等待 60s
 	        预期: 服务端打印 reader idle, close: /127.0.0.1:xxxxx, 连接被断开。
@@ -178,12 +197,36 @@ Spring Boot + Netty 使用流程 (deepblue.inaction_02_springboot)
 
 	    10. 退出客户端: 在客户端控制台输入 quit。
 
-	方式三: 命令行运行 (不用 IDEA)
-	    mvn -q dependency:build-classpath -Dmdep.outputFile=target/cp.txt
-	    mvn -q compile
-	    然后在 Git Bash 中:
-	        CP="target/classes;$(cat target/cp.txt)"
-	        java -cp "$CP" deepblue.NettyAdvancedApplication
-	        java -cp "$CP" deepblue.inaction_02_springboot.client.MineNettyClient jerry
-	        java -cp "$CP" deepblue.inaction_02_springboot.client.MineNettyClient tom
-	    后续操作同方式二的第 3 ~ 10 步。
+	方式三: 两个终端互相发 JSON (推荐, 不用 IDEA)
+	    脚本在项目根目录 scripts\ 下, cmd 和 PowerShell 都能直接运行:
+	        netty-build.cmd    编译, 并把运行时依赖复制到 target\lib
+	        netty-server.cmd   先编译, 再启动服务端 (HTTP 8080, TCP 9000), 可追加 Spring 参数
+	        netty-client.cmd   启动一个客户端: netty-client.cmd <userId> [port]; 没编译过会先编译
+	    脚本会执行 chcp 65001 并设置 UTF-8 输出, 终端显示中文不乱码。
+
+	    1. 终端 S (服务端):
+	        scripts\netty-server.cmd
+	        等到出现: Netty server started on port 9000
+	        (端口被占用时: scripts\netty-server.cmd --server.port=18080 --netty.server.port=19000,
+	         客户端相应加端口参数, 例如 scripts\netty-client.cmd tom 19000)
+
+	    2. 终端 A:
+	        scripts\netty-client.cmd tom
+	       终端 B:
+	        scripts\netty-client.cmd jerry
+	        预期: 两边都打印 << {"content":"welcome xxx","from":"server","type":"LOGIN_OK"}
+
+	    3. A → B: 在终端 A (tom) 输入
+	        {"content":"Hello jerry, I am tom","to":"jerry","type":"CHAT"}
+	        预期: 终端 A 打印 >> {"content":"Hello jerry, I am tom","from":"tom","to":"jerry","type":"CHAT"}
+	              终端 B 打印 << {"content":"Hello jerry, I am tom","from":"tom","to":"jerry","type":"CHAT"}
+
+	    4. B → A: 在终端 B (jerry) 输入
+	        {"content":"Hello tom, I am jerry","to":"tom","type":"CHAT"}
+	        预期: 终端 B 打印 >> {"content":"Hello tom, I am jerry","from":"jerry","to":"tom","type":"CHAT"}
+	              终端 A 打印 << {"content":"Hello tom, I am jerry","from":"jerry","to":"tom","type":"CHAT"}
+
+	    5. 想再加人就再开一个终端: scripts\netty-client.cmd spike, 三人之间任意互发。
+	       其余操作 (对方离线、输入校验、HTTP 推送、心跳、重连、踢下线) 同方式二的第 4 ~ 10 步。
+	    6. 退出: 客户端输入 quit; 服务端按 Ctrl+C。
+	    注意: 修改代码后要重新执行 netty-server.cmd 或 netty-build.cmd, 客户端脚本在 target\lib 已存在时不会自动重新编译。

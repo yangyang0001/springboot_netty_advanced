@@ -22,7 +22,11 @@ public class JsonMessageEncoder extends MessageToMessageEncoder<Message> {
     @Override
     protected void encode(ChannelHandlerContext ctx, Message msg, List<Object> out) {
         String json = JSON.toJSONString(msg);
-        log.info("JsonMessageEncoder encode invoke, [{}] encode -> {}", ctx.channel().id().asShortText(), json);
+        if (msg.getType() != null && msg.getType().isHeartbeat()) {
+            log.debug("JsonMessageEncoder encode invoke, {} encode -> {}", ctx.channel().id().asShortText(), json);
+        } else {
+            log.info("JsonMessageEncoder encode invoke, {} encode -> {}", ctx.channel().id().asShortText(), json);
+        }
         out.add(json + "\n");
     }
 }

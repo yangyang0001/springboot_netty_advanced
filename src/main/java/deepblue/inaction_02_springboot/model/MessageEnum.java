@@ -17,5 +17,10 @@ public enum MessageEnum {
     /** 服务端 → 客户端：错误提示。 */
     ERROR,
     /** 服务端 → 客户端：同一个 userId 在别处登录，被踢下线，客户端收到后不再重连。 */
-    KICKED
+    KICKED;
+
+    /** PING / PONG 是心跳，数量多且没有业务含义，日志打 debug。 */
+    public boolean isHeartbeat() {
+        return this == PING || this == PONG;
+    }
 }
