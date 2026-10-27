@@ -9,6 +9,7 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
@@ -21,6 +22,7 @@ import java.util.concurrent.TimeUnit;
  *
  * 演示：写空闲发心跳、断线指数退避重连（关掉服务端再启动即可观察）。
  */
+@Slf4j
 public final class MineNettyClient {
 
     private static final String HOST = "127.0.0.1";
@@ -52,13 +54,16 @@ public final class MineNettyClient {
     }
 
     private void connect() {
+        log.info("MineNettyClient connect invoke, {} connecting to {}:{}", userId, HOST, port);
         ChannelFuture future = bootstrap.connect(HOST, port);
         future.addListener((ChannelFuture f) -> {
             if (f.isSuccess()) {
                 reconnectDelaySeconds = 1;
                 channel = f.channel();
-                channel.writeAndFlush(new Message(MessageType.LOGIN, userId, null, null));
+                log.info("MineNettyClient connect invoke, [{}] connect ok, send LOGIN as {}", channel.id().asShortText(), userId);
+                send(channel, new Message(MessageType.LOGIN, userId, null, null));
             } else {
+                log.warn("MineNettyClient connect invoke, connect to {}:{} failed: {}", HOST, port, f.cause().toString());
                 scheduleReconnect();
             }
         });
@@ -68,7 +73,7 @@ public final class MineNettyClient {
     private void scheduleReconnect() {
         int delay = reconnectDelaySeconds;
         reconnectDelaySeconds = Math.min(reconnectDelaySeconds * 2, MAX_RECONNECT_DELAY_SECONDS);
-        System.out.println("reconnect in " + delay + "s");
+        log.info("MineNettyClient scheduleReconnect invoke, reconnect in {}s", delay);
         group.schedule(this::connect, delay, TimeUnit.SECONDS);
     }
 
@@ -88,11 +93,21 @@ public final class MineNettyClient {
             String[] parts = line.split("\\s+", 2);
             Channel ch = channel;
             if (parts.length == 2 && ch != null && ch.isActive()) {
-                ch.writeAndFlush(new Message(MessageType.CHAT, userId, parts[0], parts[1]));
+                log.info("MineNettyClient readConsole invoke, [{}] >> CHAT to={} content={}", ch.id().asShortText(), parts[0], parts[1]);
+                send(ch, new Message(MessageType.CHAT, userId, parts[0], parts[1]));
             } else {
                 System.out.println("usage: <to> <content>");
             }
         }
+        log.info("MineNettyClient readConsole invoke, {} quit, shutting down", userId);
         group.shutdownGracefully();
+    }
+
+    private static void send(Channel ch, Message message) {
+        ch.writeAndFlush(message).addListener((ChannelFuture f) -> {
+            if (!f.isSuccess()) {
+                log.warn("MineNettyClient send invoke, [{}] send failed: {}", ch.id().asShortText(), message, f.cause());
+            }
+        });
     }
 }
