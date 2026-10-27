@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Netty 9 · Spring Boot 案例 Pipeline 流程</title>
+    <style>
+        :root{color-scheme:light;--ink:#172b46;--muted:#5c6f84;--line:#d9e3ed;--blue:#1765d1;--green:#087f67;--orange:#b45a0b;--purple:#6d3fc0}*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:var(--ink);font:15px/1.7 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1280px;margin:auto;padding:32px 24px 60px}h1{font-size:30px;line-height:1.3;margin:8px 0 14px}h2{font-size:19px;margin:0 0 16px}h3{margin:0 0 8px;font-size:21px}p{margin:8px 0}.eyebrow{color:var(--blue);font-weight:700;font-size:12px;letter-spacing:2px}.muted{color:var(--muted)}a{color:var(--blue)}code,pre,.mono{font-family:Consolas,"Cascadia Code",monospace}code{overflow-wrap:anywhere}section,.card{background:white;border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:18px}.toolbar,.modes{display:flex;gap:8px;align-items:center;flex-wrap:wrap}button,select{font:inherit;border:1px solid #c8d5e4;border-radius:8px;padding:7px 14px;background:white;color:var(--ink);cursor:pointer}button:hover{background:#eef4ff}button:focus-visible,select:focus-visible{outline:3px solid #80b4ff;outline-offset:2px}button[aria-pressed="true"]{color:white;background:var(--blue);border-color:var(--blue)}button:disabled{opacity:.4;cursor:default}.toolbar{margin-top:18px}.progress{margin-left:auto;font-size:13px;color:var(--muted)}.track{height:4px;background:#e6edf5;margin:16px 0}.track div{height:100%;background:var(--blue);transition:width .2s}
+        .ctxbar{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 4px}.chip{border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-size:13px;background:#f8fafc}.chip b{font-weight:600}.chip.thread{border-color:#c9b6ef;background:#f4effd;color:var(--purple)}.chip.chan{border-color:#b9d3f5;background:#eef5ff;color:var(--blue)}
+        .pipeline{overflow-x:auto;padding:12px 2px 6px}.chain{display:flex;align-items:stretch;min-width:1080px;gap:4px}.node{flex:1;min-width:100px;text-align:center;border:2px solid var(--line);border-radius:10px;padding:12px 4px;background:#f8fafc;transition:all .2s;position:relative}.node strong{display:block;font:600 13px Consolas,monospace}.node small{display:block;color:var(--muted);font-size:11px;line-height:1.4}.node .tag{display:inline-block;margin-top:5px;font-size:10px;padding:0 6px;border-radius:4px;background:#edf3fb;color:var(--muted)}.node.in .tag{background:#eaf2ff;color:var(--blue)}.node.out .tag{background:#e9f8f2;color:var(--green)}.node.duplex .tag{background:#fff3e6;color:var(--orange)}.node.biz .tag{background:#f4effd;color:var(--purple)}.node.active{border-color:var(--blue);background:#eaf2ff;box-shadow:0 0 0 3px #1765d115}.node.out.active{border-color:var(--green);background:#e9f8f2;box-shadow:0 0 0 3px #087f6715}.node.duplex.active{border-color:var(--orange);background:#fff3e6}.node.biz.active{border-color:var(--purple);background:#f4effd;box-shadow:0 0 0 3px #6d3fc015}.node.skip{opacity:.38}.join{color:#93a3b6;align-self:center}.dirs{display:flex;justify-content:space-between;min-width:1080px;font-size:12px;color:var(--muted);padding:0 6px}.dirs .in{color:var(--blue)}.dirs .out{color:var(--green)}
+        .route{background:#f3f7fd;border-left:3px solid var(--blue);padding:12px 16px;overflow-wrap:anywhere;margin-top:10px}.columns{display:grid;grid-template-columns:1.1fr 1fr;gap:18px}.columns>.card{margin-top:0}.badge{display:inline-block;background:#edf3fb;color:var(--blue);padding:2px 9px;border-radius:5px;font-size:12px;margin-bottom:10px}.payload{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}.payload div{padding:10px 15px;background:#f4f7fb;border-radius:8px;flex:1;min-width:145px}.payload small{display:block;color:var(--muted)}pre{background:#112238;color:#dce9fb;padding:16px;border-radius:9px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.8;margin:10px 0 0}pre.light{background:#f7f9fc;color:var(--ink);border:1px solid var(--line);white-space:pre;overflow-x:auto;overflow-wrap:normal}.timeline{display:flex;flex-wrap:wrap;gap:6px;margin-top:16px}.timeline button{font-size:12px;padding:5px 10px}.log{min-height:170px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:#f5f8fc}td:first-child{font-weight:600;font-family:Consolas,monospace}details{border-top:1px solid var(--line);padding:12px 0}summary{cursor:pointer;font-weight:600}footer{margin-top:20px;font-size:12px;color:var(--muted)}@media(max-width:800px){main{padding:22px 12px}.columns{grid-template-columns:1fr}h1{font-size:25px}section,.card{padding:16px}.progress{margin-left:0;width:100%}}
+
+        .arch{margin-top:6px}.frame{border:1.5px solid var(--line);border-radius:12px;padding:14px;background:#fbfcfe}.frame.spring{border-color:#9fc3a8;background:#f5fbf6}.frame-title{font-weight:700;color:#2f7a45;margin-bottom:12px}.frame-title span,.sub-title span{font-weight:400;color:var(--muted);font-size:13px;margin-left:6px}.arch-grid{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:14px}.sub-title{font-weight:700;font-size:14px;margin-bottom:10px}.frame.beans,.frame.netty,.frame.web{background:white}.bean,.grp,.client{border:1px solid var(--line);border-left:4px solid #9aa9ba;border-radius:8px;padding:7px 11px;margin-bottom:8px;background:#fff}.bean b,.grp b,.client b{display:block;font:600 13px Consolas,monospace}.bean small,.grp small,.client small{display:block;color:var(--muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}.bean.in{border-left-color:var(--blue)}.bean.out{border-left-color:var(--green)}.bean.biz{border-left-color:var(--purple)}.bean.sess{border-left-color:var(--orange)}.grp{border-left-color:#5b7fa8}.grp.io{border-left-color:var(--blue)}.grp.pipe{border-left-color:var(--green)}.grp.bizg{border-left-color:var(--purple)}.flow .grp{margin-bottom:0}.arrow{text-align:center;color:var(--muted);font-size:12px;padding:3px 0}.hint{font-size:12px;color:var(--muted);margin:4px 0 0}.wire{text-align:center;margin:10px 0;position:relative}.wire span{display:inline-block;background:#eef5ff;color:var(--blue);border:1px solid #b9d3f5;border-radius:999px;padding:4px 16px;font-size:13px}.clients{display:grid;grid-template-columns:1fr 1fr;gap:14px}.client{border-left-color:var(--blue);margin:0}.svgwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fbfcfe;padding:8px}.svgwrap svg{display:block;width:100%;min-width:900px;height:auto}.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin:4px 0 10px}.lg::before{content:"";display:inline-block;width:22px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle;background:currentColor}.lg.c2s{color:var(--blue)}.lg.s2c{color:var(--green)}.lg.inner{color:var(--purple)}.lg.http{color:var(--orange)}
+        .chain{gap:6px}.node{min-width:0;padding:12px 2px;border-width:1.5px}.node.in{border-color:#b9d3f5}.node.out{border-color:#a9dcc9}.node.duplex{border-color:#f0c99e}.node.biz{border-color:#d3c3f2}.node.tail{border-color:#d9e3ed}.node.active{border-width:2px}.node small{font-size:9.5px;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}td:nth-child(3){white-space:nowrap}@media(max-width:900px){.arch-grid,.clients{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div class="eyebrow">NETTY / SPRING BOOT 案例</div>
+        <h1>Spring Boot + Netty：消息在 ChannelPipeline 中怎么走</h1>
+        <p class="muted">按 <code>deepblue.inaction_02_springboot</code> 当前源码整理。切换场景，逐步查看每一步经过哪个
+            Handler、跑在哪个线程、消息变成了什么样，以及对应的源码和日志。</p>
+        <p><a href="Netty_2_处理链.html">← 处理链原理</a> · <a href="Netty_2_MinePipelineObject.html">MinePipelineObject
+            执行过程</a> · <a
+                href="../../java/deepblue/inaction_02_springboot/springboot_netty_使用流程.txt">使用流程说明</a></p>
+    </header>
+
+    <section aria-label="整体结构">
+        <h2>整体结构</h2>
+        <div class="arch">
+            <div class="frame spring">
+                <div class="frame-title">Spring 容器 <span>NettyAdvancedApplication</span></div>
+                <div class="arch-grid">
+                    <div class="frame beans">
+                        <div class="sub-title">Spring Bean（单例）</div>
+                        <div class="bean"><b>NettyServerConfig</b><small>netty.server.* 配置</small></div>
+                        <div class="bean in"><b>JsonMessageDecoder</b><small>@Sharable · String → Message</small></div>
+                        <div class="bean out"><b>JsonMessageEncoder</b><small>@Sharable · Message → JSON</small></div>
+                        <div class="bean biz"><b>ServerBusinessHandler</b><small>@Sharable · LOGIN / PING / CHAT</small>
+                        </div>
+                        <div class="bean sess"><b>ChannelSessionManager</b><small>userId ⇄ Channel 会话表</small></div>
+                    </div>
+                    <div class="frame netty">
+                        <div class="sub-title">NettyServer <span>SmartLifecycle · TCP :9000</span></div>
+                        <div class="flow">
+                            <div class="grp"><b>bossGroup</b><small>1 线程 · 只负责 accept</small></div>
+                            <div class="arrow">↓ 新连接注册到</div>
+                            <div class="grp io"><b>workerGroup</b><small>CPU×2 线程 · 读写 Socket、编解码</small></div>
+                            <div class="arrow">↓ 每个连接一条</div>
+                            <div class="grp pipe"><b>ChannelPipeline</b><small>由 NettyServerInitializer 组装</small>
+                            </div>
+                            <div class="arrow">↓ business 提交到</div>
+                            <div class="grp bizg"><b>bizGroup</b><small>16 线程 · 跑业务 Handler，可阻塞</small></div>
+                        </div>
+                    </div>
+                    <div class="frame web">
+                        <div class="sub-title">Tomcat <span>HTTP :8080</span></div>
+                        <div class="bean"><b>NettyPushController</b><small>GET /netty/online<br>POST /netty/push<br>POST
+                            /netty/broadcast</small></div>
+                        <div class="arrow">↓ 调用</div>
+                        <div class="bean sess"><b>ChannelSessionManager.send</b><small>按 userId 找到 Channel<br>channel.writeAndFlush</small>
+                        </div>
+                        <p class="hint">HTTP 请求 → 经 Netty 长连接推给客户端</p>
+                    </div>
+                </div>
+            </div>
+            <div class="wire"><span>⇅ TCP :9000 · 一行一个 JSON（以 \n 结尾）</span></div>
+            <div class="clients">
+                <div class="client"><b>终端 A · MineNettyClient tom</b><small>控制台输入
+                    {"content":"hi","to":"jerry","type":"CHAT"}</small></div>
+                <div class="client"><b>终端 B · MineNettyClient jerry</b><small>收到
+                    {"content":"hi","from":"tom","to":"jerry","type":"CHAT"}</small></div>
+            </div>
+        </div>
+        <h2 style="margin-top:26px">服务端每个连接的 ChannelPipeline</h2>
+        <p class="muted">蓝色箭头是入站（读）路径，绿色箭头是出站（写）路径。入站跳过两个 Encoder，出站跳过三个 Decoder 和
+            business。</p>
+        <div class="svgwrap">
+            <svg id="pipeSvg" role="img" aria-label="服务端 ChannelPipeline 入站与出站路径"></svg>
+        </div>
+    </section>
+
+    <section aria-label="交互流程">
+        <h2>交互流程：终端 A ⇄ 服务端 ⇄ 终端 B</h2>
+        <p class="muted">每条消息都要穿过三段 Pipeline：发送方客户端（出站）→ 服务端（入站 → business → 出站）→
+            接收方客户端（入站）。CHAT 在服务端会跨两条 Channel：在 A 的 Channel 上入站，在 B 的 Channel 上出站。</p>
+        <div class="legend"><span class="lg c2s">客户端 → 服务端</span><span class="lg s2c">服务端 → 客户端</span><span
+                class="lg inner">服务端内部（跨 Channel）</span><span class="lg http">HTTP</span></div>
+        <div class="svgwrap">
+            <svg id="seqSvg" role="img" aria-label="终端 A、服务端、终端 B 之间的交互时序图"></svg>
+        </div>
+        <p class="muted">下面的播放器把每一段拆开，逐个 Handler 展示（场景③ 对应上图第 2 段，第 3 段反方向完全对称）。</p>
+    </section>
+
+    <section aria-label="执行过程播放器">
+        <div class="modes" id="modes"></div>
+        <p id="modeDesc" class="muted"></p>
+        <div class="toolbar">
+            <button id="restart">重置</button>
+            <button id="prev">← 上一步</button>
+            <button id="play">▶ 自动播放</button>
+            <button id="next">下一步 →</button>
+            <label>速度 <select id="speed">
+                <option value="2200">慢</option>
+                <option value="1400" selected>中</option>
+                <option value="800">快</option>
+            </select></label><span class="progress" id="progress"></span></div>
+        <div class="track">
+            <div id="bar"></div>
+        </div>
+        <div class="ctxbar"><span class="chip chan">Channel：<b id="chan"></b></span><span class="chip thread">线程：<b
+                id="thread"></b></span></div>
+        <div class="pipeline">
+            <div class="dirs"><span class="in">入站 ▶ Head → Tail</span><span class="out">出站 ◀ Tail → Head</span>
+            </div>
+            <div class="chain" id="chain"></div>
+        </div>
+        <div id="route" class="route mono"></div>
+        <div class="timeline" id="timeline" aria-label="跳转到步骤"></div>
+        <p class="muted" style="font-size:12px">键盘：← / → 单步，空格播放或暂停。蓝色＝入站 Handler，绿色＝出站
+            Handler，橙色＝双向（IdleStateHandler），紫色＝业务 Handler（bizGroup）。变淡的节点表示本次事件被跳过。</p>
+    </section>
+
+    <div class="columns" style="margin-top:18px">
+        <section class="card" aria-live="polite"><span id="bp" class="badge"></span>
+            <h3 id="stepTitle"></h3>
+            <p id="desc"></p>
+            <div class="payload">
+                <div><small>当前消息形态</small><code id="message"></code></div>
+                <div><small>会话表 ChannelSessionManager</small><code id="session"></code></div>
+            </div>
+            <h2>当前执行代码</h2>
+            <div id="file" class="muted mono" style="font-size:12px"></div>
+            <pre id="code"></pre>
+        </section>
+        <section class="card"><h2>累计日志（与真实输出格式一致）</h2>
+            <p class="muted" style="font-size:13px">格式：<code>类名 方法名 invoke, channelId ...</code>。channelId
+                每次运行都不同，这里用 <code>a1</code>（tom）、<code>b2</code>（jerry）、<code>c3</code>（新 tom）代替。心跳相关日志为
+                debug，默认不显示，图中用 <code>(debug)</code> 标出。</p>
+            <pre id="log" class="log"></pre>
+        </section>
+    </div>
+
+    <section><h2>Pipeline 中每个 Handler</h2>
+        <div class="tablewrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>类</th>
+                    <th>方向</th>
+                    <th>状态 / 来源</th>
+                    <th>运行线程</th>
+                    <th>作用</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td>Head</td>
+                    <td>DefaultPipeline 内置</td>
+                    <td>双向</td>
+                    <td>Netty 内置</td>
+                    <td>worker EventLoop</td>
+                    <td>入站起点：把 Socket 读到的 ByteBuf 交给 Pipeline；出站终点：真正写入 Socket。</td>
+                </tr>
+                <tr>
+                    <td>idle</td>
+                    <td>IdleStateHandler(60, 0, 0)</td>
+                    <td>双向</td>
+                    <td>有状态，每个连接 new</td>
+                    <td>worker EventLoop</td>
+                    <td>记录最后一次读的时间，60 秒没读到数据就触发 IdleStateEvent；出站只是透传。</td>
+                </tr>
+                <tr>
+                    <td>frameDecoder</td>
+                    <td>LineBasedFrameDecoder(8192)</td>
+                    <td>入站</td>
+                    <td>有状态（累积半包），每个连接 new</td>
+                    <td>worker EventLoop</td>
+                    <td>按 \n 切出完整一帧，解决粘包 / 半包；超过 8192 字节抛异常。</td>
+                </tr>
+                <tr>
+                    <td>stringDecoder</td>
+                    <td>StringDecoder(UTF-8)</td>
+                    <td>入站</td>
+                    <td>每个连接 new</td>
+                    <td>worker EventLoop</td>
+                    <td>ByteBuf → String。</td>
+                </tr>
+                <tr>
+                    <td>jsonDecoder</td>
+                    <td>JsonMessageDecoder</td>
+                    <td>入站</td>
+                    <td>无状态，@Sharable Spring 单例</td>
+                    <td>worker EventLoop</td>
+                    <td>String → Message（fastjson）；心跳打 debug，其余打 info。</td>
+                </tr>
+                <tr>
+                    <td>stringEncoder</td>
+                    <td>StringEncoder(UTF-8)</td>
+                    <td>出站</td>
+                    <td>每个连接 new</td>
+                    <td>worker EventLoop</td>
+                    <td>String → ByteBuf。</td>
+                </tr>
+                <tr>
+                    <td>jsonEncoder</td>
+                    <td>JsonMessageEncoder</td>
+                    <td>出站</td>
+                    <td>无状态，@Sharable Spring 单例</td>
+                    <td>worker EventLoop</td>
+                    <td>Message → 一行 JSON（末尾补 \n）。</td>
+                </tr>
+                <tr>
+                    <td>business</td>
+                    <td>ServerBusinessHandler</td>
+                    <td>入站</td>
+                    <td>无状态，@Sharable Spring 单例，注入 ChannelSessionManager</td>
+                    <td><b>bizGroup</b>（addLast(bizGroup, …)）</td>
+                    <td>处理 LOGIN / PING / CHAT；读空闲踢人；兜底 exceptionCaught；channelInactive 时解绑会话。</td>
+                </tr>
+                <tr>
+                    <td>Tail</td>
+                    <td>DefaultPipeline 内置</td>
+                    <td>入站终点</td>
+                    <td>Netty 内置</td>
+                    <td>—</td>
+                    <td>business 不再 fireChannelRead，所以消息到不了 Tail；channel.writeAndFlush 从这里开始向前找出站
+                        Handler。
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <p>编码器放在 business <b>前面</b>是关键：出站事件从 business（或 Tail）沿 prev 向 Head 方向查找，只有位于它前面的出站
+            Handler 才会被调用。</p></section>
+
+    <section><h2>ctx.writeAndFlush 与 channel.writeAndFlush</h2>
+        <div class="tablewrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>写法</th>
+                    <th>用在哪里</th>
+                    <th>出站起点</th>
+                    <th>本案例中的路径</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td>ctx.writeAndFlush</td>
+                    <td>ServerBusinessHandler.reply（LOGIN_OK / PONG / ERROR）</td>
+                    <td>business 的前一个节点</td>
+                    <td>jsonEncoder → stringEncoder → idle → Head</td>
+                </tr>
+                <tr>
+                    <td>channel.writeAndFlush</td>
+                    <td>ChannelSessionManager.send（CHAT 转发 / HTTP 推送）、bind（KICKED）</td>
+                    <td>Tail</td>
+                    <td>(跳过 business) → jsonEncoder → stringEncoder → idle → Head</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <p>本案例 business 后面没有出站 Handler，所以两种写法经过的 Handler 相同；区别在于 channel.writeAndFlush 不需要
+            ctx，可以在<b>任意线程、任意 Channel</b> 上调用——这正是 CHAT 转发（tom 的线程写 jerry 的 Channel）和 HTTP
+            推送（Tomcat 线程写 Netty Channel）能成立的原因。</p></section>
+
+    <section><h2>理解与排查</h2>
+        <details open>
+            <summary>为什么编码器的日志线程是 nioEventLoopGroup，而不是 defaultEventExecutorGroup？</summary>
+            <p>business 跑在 bizGroup 线程，但它前面的 jsonEncoder 绑定的是 Channel 自己的 EventLoop。Netty 发现调用线程不是目标
+                Handler 的执行器时，会把 write 封装成任务提交给该 EventLoop。所以一次回复里，日志线程会从 <code>defaultEventExecutorGroup-4-x</code>
+                切回 <code>nioEventLoopGroup-3-x</code>，同一个 Channel 的 IO 始终由同一个 EventLoop 串行执行，线程安全。
+            </p></details>
+        <details>
+            <summary>为什么 business 要放到 bizGroup？</summary>
+            <p>LOGIN 在真实项目里通常要查库或校验 token，是阻塞操作。一个 worker EventLoop
+                同时服务很多连接，如果在它上面阻塞，这些连接的读写都会卡住。addLast(bizGroup, "business", handler) 让
+                business 在业务线程执行，并且同一个 Channel 固定分到同一个业务线程，事件顺序不变。</p></details>
+        <details>
+            <summary>粘包 / 半包在哪里处理？</summary>
+            <p>在 frameDecoder（LineBasedFrameDecoder）。TCP 是字节流，一次 read 可能读到半条或多条
+                JSON。它把字节累积在自己的缓冲区里，每遇到一个 \n 才向后传一帧；所以它是有状态的，每个连接必须 new 一个，不能做成
+                Spring 单例。</p></details>
+        <details>
+            <summary>NettyServerInitializer 去哪了？</summary>
+            <p>它本身也是一个入站 Handler（ChannelInitializer）。连接注册到 EventLoop 后，它的 initChannel 把真正的 Handler
+                加进 Pipeline，然后把自己从 Pipeline 中移除。日志 <code>pipeline initialized: [NettyServerInitializer#0,
+                    idle, …]</code> 打印时它还在，之后就没了。</p></details>
+        <details>
+            <summary>想看心跳的日志怎么办？</summary>
+            <p>心跳相关日志是 debug 级别。服务端启动参数加
+                <code>--logging.level.deepblue.inaction_02_springboot=DEBUG</code>。</p></details>
+    </section>
+    <footer>
+        依据：NettyServer、NettyServerInitializer、JsonMessageDecoder、JsonMessageEncoder、ServerBusinessHandler、ChannelSessionManager、NettyPushController、MineNettyClient、ClientHandler。独立
+        HTML，无外部依赖，可直接在浏览器打开。
+    </footer>
+</main>
+<script>
+    'use strict';
+    const $=id=>document.getElementById(id);
+    // [名称, 说明, 类型]
+    const nodes=[['Head','HeadContext ⇄ Socket','duplex'],['idle','IdleStateHandler','duplex'],['frameDecoder','LineBasedFrameDecoder','in'],['stringDecoder','StringDecoder','in'],['jsonDecoder','JsonMessageDecoder','in'],['stringEncoder','StringEncoder','out'],['jsonEncoder','JsonMessageEncoder','out'],['business','ServerBusinessHandler','biz'],['Tail','TailContext','tail']];
+    const tagText={duplex:'双向',in:'入站',out:'出站',biz:'业务 · bizGroup',tail:'内置'};
+    const T={main:'main（Spring 启动线程）',boss:'nioEventLoopGroup-2-1（boss）',io:'nioEventLoopGroup-3-1（worker EventLoop）',io2:'nioEventLoopGroup-3-2（worker EventLoop）',biz:'defaultEventExecutorGroup-4-1（bizGroup）',biz2:'defaultEventExecutorGroup-4-2（bizGroup）',tomcat:'http-nio-8080-exec-1（Tomcat）',none:'—'};
+    const IN=[2,3,4],OUT=[5,6];
+    // s(标题, 标签, 文件, 代码, 说明, 高亮节点, 跳过节点, Channel, 线程, 消息, 会话表, 路径, 日志)
+    function s(title,bp,file,code,desc,node,skip,chan,thread,message,session,route,logs=[]){return{title,bp,file,code,desc,node,skip,chan,thread,message,session,route,logs};}
+    const inbound=(chan,thr,raw,msg,session,biz,logType)=>[
+     s('Socket 可读，Head 读出 ByteBuf','入站 ①','Netty 内置 · NioEventLoop.processSelectedKeys','// worker EventLoop 发现 Socket 可读\n// HeadContext 把读到的 ByteBuf 交给 pipeline.fireChannelRead(byteBuf)','客户端写入的一行 JSON 到达服务端。Channel 绑定的 worker EventLoop 读出字节，从 Head 开始入站传播。',0,[],chan,thr,'ByteBuf：'+raw+'\\n',session,'Socket → Head'),
+     s('idle 记录读时间并透传','入站 ②','IdleStateHandler.channelRead（Netty 内置）','// 记录 lastReadTime，然后\nctx.fireChannelRead(msg);','IdleStateHandler 是双向 Handler：入站时刷新"最后一次读"的时间，读空闲计时从零开始。消息原样传下去。',1,[],chan,thr,'ByteBuf',session,'Head → idle'),
+     s('frameDecoder 按 \\n 切出一帧','入站 ③','LineBasedFrameDecoder（Netty 内置）','new LineBasedFrameDecoder(config.getMaxFrameLength())   // 8192\n// 累积字节 → 找到 \\n → 切出完整一行（不含 \\n）','TCP 没有消息边界。这里把字节累积起来，遇到 \\n 才向后传一帧，半包留着等下次数据；超过 8192 字节直接抛异常。',2,[],chan,thr,'ByteBuf（一帧，不含 \\n）',session,'idle → frameDecoder'),
+     s('stringDecoder：ByteBuf → String','入站 ④','StringDecoder（Netty 内置）','new StringDecoder(StandardCharsets.UTF_8)','按 UTF-8 解码成字符串；ByteBuf 在这之后被释放。',3,[],chan,thr,'String：'+raw,session,'frameDecoder → stringDecoder'),
+     s('jsonDecoder：String → Message','入站 ⑤','JsonMessageDecoder.java · decode','Message message = JSON.parseObject(line, Message.class);\nif (message.getType() != null && message.getType().isHeartbeat()) {\n    log.debug("JsonMessageDecoder decode invoke, {} decode <- {}", ...);\n} else {\n    log.info("JsonMessageDecoder decode invoke, {} decode <- {}", ...);\n}\nout.add(message);','fastjson 解析出 Message 对象。解析失败时打 WARN 记下原始报文并继续抛出，最终由 business.exceptionCaught 关闭连接。',4,[],chan,thr,'Message：'+msg,session,'stringDecoder → jsonDecoder',[(logType==='debug'?'(debug) ':'')+'JsonMessageDecoder decode invoke, '+chan.split(' ')[1]+' decode <- '+raw]),
+     s('跳过两个 Encoder，切换到 bizGroup','入站 ⑥','DefaultChannelPipeline（Netty 内置）','pipeline.addLast(bizGroup, "business", businessHandler);\n// 入站事件只找入站 Handler：stringEncoder / jsonEncoder 被跳过\n// business 绑定了 bizGroup → 把 channelRead 提交给业务线程','stringEncoder 和 jsonEncoder 只处理出站，入站事件直接跳过。business 注册时指定了 bizGroup，所以调用被提交到业务线程执行，worker EventLoop 立即返回去处理其他连接。',7,[5,6],chan,biz,'Message：'+msg,session,'jsonDecoder → [跳过 stringEncoder / jsonEncoder] → business（提交到 bizGroup）'),
+    ];
+    const outbound=(chan,thr,from,json,session,head,logType)=>[
+     s(from==='ctx'?'ctx.writeAndFlush：从 business 向前找出站 Handler':'channel.writeAndFlush：从 Tail 向前找出站 Handler','出站 ①',from==='ctx'?'ServerBusinessHandler.java · reply':'ChannelSessionManager.java · send / bind',from==='ctx'?'ctx.writeAndFlush(message).addListener(...);':'channel.writeAndFlush(message).addListener(...);',from==='ctx'?'从 business 的 prev 开始向 Head 方向找。调用线程是 bizGroup，而 jsonEncoder 绑定 Channel 的 EventLoop，所以 write 被封装成任务交给 EventLoop。':'从 Tail 开始向 Head 方向找，先跳过 business（入站）。任何线程都能调用：Netty 把 write 封装成任务交给这个 Channel 的 EventLoop。',from==='ctx'?7:8,from==='ctx'?[]:[7],chan,from==='ctx'?thr.biz:thr.caller,'Message：'+head,session,from==='ctx'?'business.ctx → jsonEncoder':'Tail → [跳过 business] → jsonEncoder'),
+     s('jsonEncoder：Message → 一行 JSON','出站 ②','JsonMessageEncoder.java · encode','String json = JSON.toJSONString(msg);\nlog.info("JsonMessageEncoder encode invoke, {} encode -> {}", ...);   // 心跳为 debug\nout.add(json + "\\n");','fastjson 序列化（字段按字母序：content, from, to, type），末尾补 \\n 作为帧边界。现在已经在 Channel 的 EventLoop 线程上执行。',6,[],chan,thr.io,'String：'+json+'\\n',session,'jsonEncoder → stringEncoder',[(logType==='debug'?'(debug) ':'')+'JsonMessageEncoder encode invoke, '+chan.split(' ')[1]+' encode -> '+json]),
+     s('stringEncoder：String → ByteBuf','出站 ③','StringEncoder（Netty 内置）','new StringEncoder(StandardCharsets.UTF_8)','按 UTF-8 编码成 ByteBuf。',5,[],chan,thr.io,'ByteBuf',session,'stringEncoder → [跳过 3 个 Decoder] → idle'),
+     s('跳过 Decoder，经 idle 到 Head 写入 Socket','出站 ④','IdleStateHandler.write → HeadContext.write / flush','// 出站只找出站 Handler：jsonDecoder / stringDecoder / frameDecoder 被跳过\n// idle 透传 write（本例 writerIdle = 0，不统计写空闲）\n// Head 写入 ChannelOutboundBuffer，flush 后真正写到 Socket','三个 Decoder 是入站 Handler，出站时跳过。Head 把 ByteBuf 放进出站缓冲区并 flush；写完成后 Future 回调，失败时关闭连接。',0,[2,3,4],chan,thr.io,'ByteBuf → Socket',session,'idle → Head → Socket → 客户端'),
+    ];
+    const sc={};
+    sc.START={label:'① 启动与建连',desc:'Spring 启动 → NettyServer.start 绑定端口 → 客户端连上 → initChannel 组装 Pipeline → channelActive。',steps:[
+     s('Spring 容器刷新完成，调用 NettyServer.start','启动','NettyServer.java · start','bossGroup = new NioEventLoopGroup(properties.getBossThreads());\nworkerGroup = new NioEventLoopGroup(properties.getWorkerThreads());\nbizGroup = new DefaultEventExecutorGroup(properties.getBizThreads());','NettyServer 实现 SmartLifecycle：所有单例 Bean（Decoder、Encoder、业务 Handler、会话表）都已就绪后才启动。创建三组线程：boss 只 accept，worker 做 IO，bizGroup 跑业务。',-1,[],'—（尚无连接）',T.main,'—','{}','Spring refresh → SmartLifecycle.start → NettyServer.start',['NettyServer start invoke, Netty server starting: NettyServerConfig(port=9000, bossThreads=1, workerThreads=0, bizThreads=16, ...)']),
+     s('ServerBootstrap 配置并 bind 9000','启动','NettyServer.java · start','new ServerBootstrap()\n    .group(bossGroup, workerGroup)\n    .channel(NioServerSocketChannel.class)\n    .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, ...)\n    .childHandler(new NettyServerInitializer(properties, jsonMessageDecoder,\n            jsonMessageEncoder, businessHandler, bizGroup));\nserverChannel = bootstrap.bind(properties.getPort()).syncUninterruptibly().channel();','childHandler 只登记"每个新连接用哪个 Initializer"，此时还没有任何连接级 Pipeline。bind 在 Spring 启动线程上 sync 等待是安全的（不是 EventLoop 线程）。',-1,[],'—（尚无连接）',T.main,'—','{}','bind(9000) → 监听',['NettyServer start invoke, Netty server started on port 9000']),
+     s('客户端 tom 连接，boss accept 后交给 worker','建连','Netty 内置 · ServerBootstrapAcceptor','// boss EventLoop accept 新连接\n// 新的 NioSocketChannel 注册到某个 worker EventLoop（之后终身绑定）\n// Pipeline 里此时只有：Head ⇄ NettyServerInitializer ⇄ Tail','MineNettyClient 启动后 connect 127.0.0.1:9000。boss 接受连接，把新 Channel 注册到一个 worker EventLoop，这个 Channel 之后的所有 IO 都由它执行。',-1,[],'tom a1',T.boss,'—','{}','boss accept → 注册到 worker EventLoop'),
+     s('NettyServerInitializer.initChannel 组装 Pipeline','建连','NettyServerInitializer.java · initChannel','pipeline.addLast("idle", new IdleStateHandler(60, 0, 0, TimeUnit.SECONDS));\npipeline.addLast("frameDecoder", new LineBasedFrameDecoder(8192));\npipeline.addLast("stringDecoder", new StringDecoder(UTF_8));\npipeline.addLast("jsonDecoder", jsonMessageDecoder);      // Spring 单例\npipeline.addLast("stringEncoder", new StringEncoder(UTF_8));\npipeline.addLast("jsonEncoder", jsonMessageEncoder);      // Spring 单例\npipeline.addLast(bizGroup, "business", businessHandler);  // Spring 单例 + 业务线程','有状态的 Handler（idle、frameDecoder）每个连接 new；无状态的 @Sharable Handler 直接复用 Spring 单例。initChannel 结束后 Initializer 把自己从 Pipeline 移除。',-1,[],'tom a1',T.io,'—','{}','Head ⇄ idle ⇄ frameDecoder ⇄ stringDecoder ⇄ jsonDecoder ⇄ stringEncoder ⇄ jsonEncoder ⇄ business ⇄ Tail',['NettyServerInitializer initChannel invoke, a1 pipeline initialized: [NettyServerInitializer#0, idle, frameDecoder, stringDecoder, jsonDecoder, stringEncoder, jsonEncoder, business, DefaultChannelPipeline$TailContext#0]']),
+     s('channelActive 传到 business','建连','ServerBusinessHandler.java · channelActive','log.info("ServerBusinessHandler channelActive invoke, {} connected: {}", ...);\nctx.fireChannelActive();','连接激活事件沿入站方向传播，到 business 时同样切换到 bizGroup 执行。idle 在此时开始读空闲计时。之后客户端会自动发送 LOGIN（见场景②）。',7,[5,6],'tom a1',T.biz,'—','{}','Head → idle → … → business（bizGroup）',['ServerBusinessHandler channelActive invoke, a1 connected: /127.0.0.1:53842']),
+    ]};
+    sc.LOGIN={label:'② LOGIN 登录',desc:'客户端连上后自动发 LOGIN；服务端绑定 userId ⇄ Channel，用 ctx.writeAndFlush 回 LOGIN_OK。',steps:[
+     ...inbound('tom a1',T.io,'{"from":"tom","type":"LOGIN"}','Message(type=LOGIN, from=tom)','{}',T.biz),
+     s('business 处理 LOGIN：绑定会话','业务','ServerBusinessHandler.java · channelRead0','case LOGIN -> {\n    sessionManager.bind(msg.getFrom(), ctx.channel());\n    reply(ctx, Message.of(MessageEnum.LOGIN_OK, "welcome " + msg.getFrom()));\n}','真实项目这里通常要查库或校验 token（阻塞），所以 business 放在 bizGroup。bind 把 userId 写进 Channel 的 Attribute，并放进会话表。',7,[],'tom a1',T.biz,'Message(type=LOGIN, from=tom)','{tom → a1}','business.channelRead0 → ChannelSessionManager.bind',['ServerBusinessHandler channelRead0 invoke, a1 recv user=null msg=Message(type=LOGIN, from=tom, to=null, content=null)','ChannelSessionManager bind invoke, a1 bind user=tom online=1','ServerBusinessHandler channelRead0 invoke, a1 login: tom','ServerBusinessHandler reply invoke, a1 reply Message(type=LOGIN_OK, from=server, to=null, content=welcome tom)']),
+     ...outbound('tom a1',{biz:T.biz,io:T.io},'ctx','{"content":"welcome tom","from":"server","type":"LOGIN_OK"}','{tom → a1}','Message(type=LOGIN_OK, content=welcome tom)'),
+     s('客户端收到 LOGIN_OK','客户端','ClientHandler.java · channelRead0','log.info("ClientHandler channelRead0 invoke, {} << {}", channelId(ctx), JSON.toJSONString(msg));','客户端 Pipeline 与服务端对称（idle 写空闲 20s / frameDecoder / … / ClientHandler），解码后打印收到的 JSON。',-1,[],'tom（客户端）','客户端 nioEventLoopGroup-2-1','Message(type=LOGIN_OK)','{tom → a1}','Socket → 客户端 Pipeline → ClientHandler',['[client tom] ClientHandler channelRead0 invoke, a1 << {"content":"welcome tom","from":"server","type":"LOGIN_OK"}']),
+    ]};
+    sc.CHAT={label:'③ CHAT 跨 Channel 转发',desc:'tom 的 Channel 入站 → business 查会话表 → 在 jerry 的 Channel 上 channel.writeAndFlush。两条 Pipeline 接力。',steps:[
+     s('tom 在控制台输入 JSON','客户端','MineNettyClient.java · readConsole / parseInput','// 控制台输入（from 不用填，自动填为发送者）\n{"content":"hi jerry","to":"jerry","type":"CHAT"}\nMessage message = parseInput(userId, line);   // 校验 type / to / content\nsend(ch, message);','客户端先校验 JSON：type 只能是 CHAT / PING，CHAT 必须有 to 和 content，from 统一填为发送者。然后经客户端 Pipeline 编码发出。',-1,[],'tom（客户端）','main（控制台线程）','Message(type=CHAT, from=tom, to=jerry)','{tom → a1, jerry → b2}','控制台 → parseInput → 客户端 Pipeline → Socket',['[client tom] MineNettyClient readConsole invoke, a1 >> {"content":"hi jerry","from":"tom","to":"jerry","type":"CHAT"}']),
+     ...inbound('tom a1',T.io,'{"content":"hi jerry","from":"tom","to":"jerry","type":"CHAT"}','Message(type=CHAT, from=tom, to=jerry, content=hi jerry)','{tom → a1, jerry → b2}',T.biz),
+     s('business 处理 CHAT：查会话表找到 jerry','业务','ServerBusinessHandler.java · channelRead0 → ChannelSessionManager.send','case CHAT -> {\n    msg.setFrom(userId);                       // 以登录身份为准\n    if (!sessionManager.send(msg.getTo(), msg)) {\n        reply(ctx, Message.of(MessageEnum.ERROR, msg.getTo() + " is offline"));\n    }\n}\n// send 内部：\nChannel channel = channels.get(userId);       // jerry → b2\nif (!channel.isWritable()) { return false; }  // ⑦ 高水位保护\nchannel.writeAndFlush(message)...','from 再以服务端登录身份覆盖一次。send 从会话表拿到 jerry 的 Channel b2，检查 isWritable 后写出。注意：此后的出站发生在 <b>jerry 的 Pipeline</b> 上。',7,[],'tom a1 → jerry b2',T.biz,'Message(type=CHAT, from=tom, to=jerry)','{tom → a1, jerry → b2}','tom.business → sessionManager.send → jerry 的 Channel',['ServerBusinessHandler channelRead0 invoke, a1 recv user=tom msg=Message(type=CHAT, from=tom, to=jerry, content=hi jerry)','ServerBusinessHandler channelRead0 invoke, a1 chat tom -> jerry: hi jerry','ChannelSessionManager send invoke, b2 send to jerry: Message(type=CHAT, from=tom, to=jerry, content=hi jerry)']),
+     ...outbound('jerry b2',{caller:T.biz+' → 提交给 jerry 的 EventLoop',io:T.io2},'channel','{"content":"hi jerry","from":"tom","to":"jerry","type":"CHAT"}','{tom → a1, jerry → b2}','Message(type=CHAT, from=tom, to=jerry)'),
+     s('jerry 的客户端收到消息','客户端','ClientHandler.java · channelRead0','log.info("ClientHandler channelRead0 invoke, {} << {}", channelId(ctx), JSON.toJSONString(msg));','jerry 终端打印收到的 JSON。反方向（jerry → tom）完全对称：jerry 的 Channel 入站，tom 的 Channel 出站。',-1,[],'jerry（客户端）','客户端 nioEventLoopGroup-2-1','Message(type=CHAT, from=tom)','{tom → a1, jerry → b2}','Socket → 客户端 Pipeline → ClientHandler',['[client jerry] ClientHandler channelRead0 invoke, b2 << {"content":"hi jerry","from":"tom","to":"jerry","type":"CHAT"}']),
+    ]};
+    sc.PUSH={label:'④ HTTP 推送',desc:'Tomcat 线程调用 Controller → ChannelSessionManager.send → 在 jerry 的 Channel 上出站。没有入站，只有出站。',steps:[
+     s('curl 调用 HTTP 接口','HTTP','NettyPushController.java · push','// curl.exe -X POST "http://localhost:8080/netty/push?to=jerry&content=notice"\n@PostMapping("/push")\npublic Map<String, Object> push(@RequestParam String to, @RequestParam String content) {\n    boolean sent = sessionManager.send(to, Message.of(MessageEnum.PUSH, content));\n    return Map.of("to", to, "sent", sent);\n}','这一步完全在 Spring MVC 里：Tomcat 线程执行 Controller。Controller 拿不到任何 ctx，只能通过会话表找到 Channel。',-1,[],'—（HTTP 请求）',T.tomcat,'Message(type=PUSH, content=notice)','{tom → a1, jerry → b2}','HTTP → NettyPushController.push → ChannelSessionManager.send',['NettyPushController push invoke, http push to=jerry content=notice','ChannelSessionManager send invoke, b2 send to jerry: Message(type=PUSH, from=server, to=null, content=notice)']),
+     ...outbound('jerry b2',{caller:T.tomcat+' → 提交给 jerry 的 EventLoop',io:T.io2},'channel','{"content":"notice","from":"server","type":"PUSH"}','{tom → a1, jerry → b2}','Message(type=PUSH, content=notice)'),
+     s('HTTP 立即返回，客户端收到 PUSH','结果','NettyPushController.java · push','return Map.of("to", to, "sent", sent);   // {"to":"jerry","sent":true}','sent=true 表示已提交写出，不代表对方已经收到（写是异步的）。jerry 终端打印 PUSH。',-1,[],'jerry（客户端）','客户端 nioEventLoopGroup-2-1','Message(type=PUSH)','{tom → a1, jerry → b2}','Tomcat 返回 {"to":"jerry","sent":true}；jerry 收到 PUSH',['NettyPushController push invoke, http push to=jerry sent=true','[client jerry] ClientHandler channelRead0 invoke, b2 << {"content":"notice","from":"server","type":"PUSH"}']),
+    ]};
+    sc.HEART={label:'⑤ 心跳与读空闲',desc:'客户端写空闲 20s 发 PING，服务端回 PONG（日志为 debug）；客户端 60s 无任何数据时，idle 触发事件，business 关闭连接。',steps:[
+     s('客户端写空闲 20s，自动发 PING','客户端','ClientHandler.java · userEventTriggered','if (evt instanceof IdleStateEvent e && e.state() == IdleState.WRITER_IDLE) {\n    log.debug("ClientHandler userEventTriggered invoke, {} writer idle, send PING", ...);\n    ctx.writeAndFlush(new Message(MessageEnum.PING, userId, null, null));\n}','客户端 Pipeline 里的 IdleStateHandler(0, 20, 0)：20 秒没写过数据就触发 WRITER_IDLE，ClientHandler 发一条 PING 保活。',-1,[],'tom（客户端）','客户端 nioEventLoopGroup-2-1','Message(type=PING)','{tom → a1}','客户端 idle → ClientHandler → 发 PING',['(debug) [client tom] ClientHandler userEventTriggered invoke, a1 writer idle, send PING']),
+     ...inbound('tom a1',T.io,'{"from":"tom","type":"PING"}','Message(type=PING, from=tom)','{tom → a1}',T.biz,'debug'),
+     s('business 回 PONG','业务','ServerBusinessHandler.java · channelRead0 / reply','case PING -> reply(ctx, Message.of(MessageEnum.PONG, null));','PING 经过 idle 时已经刷新了读时间，服务端不会踢这个连接。回复走 ctx.writeAndFlush，日志全部为 debug。',7,[],'tom a1',T.biz,'Message(type=PONG)','{tom → a1}','business → reply(PONG)',['(debug) ServerBusinessHandler channelRead0 invoke, a1 recv user=tom msg=Message(type=PING, from=tom, to=null, content=null)','(debug) ServerBusinessHandler reply invoke, a1 reply Message(type=PONG, from=server, to=null, content=null)']),
+     ...outbound('tom a1',{biz:T.biz,io:T.io},'ctx','{"from":"server","type":"PONG"}','{tom → a1}','Message(type=PONG)','debug'),
+     s('另一种情况：60s 内什么都没收到','读空闲','IdleStateHandler（Netty 内置）','new IdleStateHandler(config.getReaderIdleSeconds(), 0, 0, TimeUnit.SECONDS)   // 60s\n// 定时任务发现 60s 没有 channelRead → ctx.fireUserEventTriggered(IdleStateEvent.READER_IDLE)','例如用 telnet 连上后什么都不发。idle 的定时任务在 EventLoop 上检查，超时后发出 IdleStateEvent，沿入站方向传播。',1,[],'spike d4',T.io,'IdleStateEvent(READER_IDLE)','{spike → d4}','idle → fireUserEventTriggered → … → business'),
+     s('business 收到空闲事件，关闭连接','读空闲','ServerBusinessHandler.java · userEventTriggered','if (evt instanceof IdleStateEvent) {\n    log.info("ServerBusinessHandler userEventTriggered invoke, {} reader idle, close: {} user={}", ...);\n    ctx.close();\n}','用户事件同样跳过 Decoder / Encoder 的处理逻辑，到达 business（bizGroup）。ctx.close 是出站操作，向 Head 方向传播，最终关闭 Socket。',7,[5,6],'spike d4',T.biz,'IdleStateEvent(READER_IDLE)','{spike → d4}','business.userEventTriggered → ctx.close() → Head',['ServerBusinessHandler userEventTriggered invoke, d4 reader idle, close: /127.0.0.1:53900 user=spike']),
+     s('channelInactive：解绑会话','断开','ServerBusinessHandler.java · channelInactive → ChannelSessionManager.unbind','sessionManager.unbind(ctx.channel());\n// unbind 内部：channels.remove(userId, channel)  // 只移除自己','连接关闭后 channelInactive 沿入站方向到 business，从会话表移除。remove(key, value) 只删自己，避免误删重复登录后的新连接。',7,[5,6],'spike d4',T.biz,'—','{}','Head → … → business.channelInactive → unbind',['ServerBusinessHandler channelInactive invoke, d4 disconnected: /127.0.0.1:53900 user=spike','ChannelSessionManager unbind invoke, d4 unbind user=spike removed=true online=0']),
+    ]};
+    sc.KICK={label:'⑥ 重复登录踢下线',desc:'新 tom（c3）登录 → bind 发现旧连接 a1 → 在旧 Channel 上写 KICKED → 写完关闭 → 旧客户端不再重连。',steps:[
+     ...inbound('新 tom c3',T.io2,'{"from":"tom","type":"LOGIN"}','Message(type=LOGIN, from=tom)','{tom → a1}',T.biz2).slice(5),
+     s('bind 发现 tom 已有旧连接 a1','业务','ChannelSessionManager.java · bind','channel.attr(USER_ID).set(userId);\nChannel old = channels.put(userId, channel);      // tom → c3，拿到旧的 a1\nif (old != null && old != channel) {\n    old.attr(USER_ID).set(null);\n    old.writeAndFlush(Message.of(MessageEnum.KICKED, userId + " logged in elsewhere"))\n            .addListener(f -> f.channel().close());\n}','会话表直接替换成新连接 c3。旧连接 a1 先把 Attribute 清空（这样它 channelInactive 时 unbind 不会误删 c3），然后在 a1 的 Channel 上写 KICKED，写完成后关闭。',7,[],'新 tom c3 → 旧 tom a1',T.biz2,'Message(type=KICKED)','{tom → c3}','c3.business → bind → 旧 Channel a1.writeAndFlush(KICKED)',['ServerBusinessHandler channelRead0 invoke, c3 recv user=null msg=Message(type=LOGIN, from=tom, to=null, content=null)','ChannelSessionManager bind invoke, c3 bind user=tom online=2','ChannelSessionManager bind invoke, a1 kick old channel of user=tom, new channel=c3']),
+     ...outbound('旧 tom a1',{caller:T.biz2+' → 提交给 a1 的 EventLoop',io:T.io},'channel','{"content":"tom logged in elsewhere","from":"server","type":"KICKED"}','{tom → c3}','Message(type=KICKED)'),
+     s('写完成回调：关闭旧连接','断开','ChannelSessionManager.java · bind（Listener）','.addListener((ChannelFuture f) -> {\n    log.info("ChannelSessionManager bind invoke, {} kicked notice written={}, close", ...);\n    f.channel().close();\n});','先写后关：保证 KICKED 已经写出再关闭，客户端才能先读到它。旧连接 channelInactive 时 Attribute 已为空，unbind 什么也不做，会话表仍是 tom → c3。',-1,[],'旧 tom a1',T.io,'—','{tom → c3}','Future 完成 → close(a1) → channelInactive(a1)',['ChannelSessionManager bind invoke, a1 kicked notice written=true, close','ServerBusinessHandler channelInactive invoke, a1 disconnected: /127.0.0.1:53842 user=null']),
+     s('旧客户端收到 KICKED，不再重连','客户端','ClientHandler.java · channelRead0 / channelInactive','if (msg.getType() == MessageEnum.KICKED) { kicked = true; }\n...\npublic void channelInactive(ChannelHandlerContext ctx) {\n    if (kicked) {\n        log.warn("... kicked offline, will not reconnect (type quit to exit)", ...);\n        return;                       // 不调用 onDisconnected → 不重连\n    }\n    onDisconnected.run();             // 普通断线：指数退避重连\n}','如果旧客户端照常重连，就会以 tom 再次登录、又把新的踢掉，两边无限互踢。收到 KICKED 后不再重连，问题就解决了。',-1,[],'旧 tom（客户端）','客户端 nioEventLoopGroup-2-1','Message(type=KICKED)','{tom → c3}','旧客户端：<< KICKED → 连接关闭 → 不重连',['[client tom 旧] ClientHandler channelRead0 invoke, a1 << {"content":"tom logged in elsewhere","from":"server","type":"KICKED"}','[client tom 旧] ClientHandler channelInactive invoke, a1 kicked offline, will not reconnect (type quit to exit)']),
+    ]};
+    // KICK 场景前面用到的 inbound 只保留"切换到 bizGroup"之前的关键一步，补一个说明步骤
+    sc.KICK.steps.unshift(s('新的 tom 客户端连上并发送 LOGIN','入站','MineNettyClient.java · connect','send(channel, new Message(MessageEnum.LOGIN, userId, null, null));','另一个终端又以 tom 启动客户端。新连接 c3 经历和场景①②相同的建连与入站解码（这里略过前几步），LOGIN 到达 business。',-1,[],'新 tom c3',T.io2,'Message(type=LOGIN, from=tom)','{tom → a1}','新连接 c3：Socket → Head → … → jsonDecoder',['JsonMessageDecoder decode invoke, c3 decode <- {"from":"tom","type":"LOGIN"}']));
+
+    const order=['START','LOGIN','CHAT','PUSH','HEART','KICK'];
+    let mode='START',index=0,timer=null;
+    order.forEach(k=>{const b=document.createElement('button');b.dataset.mode=k;b.textContent=sc[k].label;b.onclick=()=>{pause();mode=k;index=0;render();};$('modes').append(b);});
+    nodes.forEach(([name,label,type],i)=>{const n=document.createElement('div');n.id='node'+i;const t=document.createElement('strong');t.textContent=name;const sub=document.createElement('small');sub.textContent=label;const tag=document.createElement('span');tag.className='tag';tag.textContent=tagText[type];n.append(t,sub,tag);$('chain').append(n);});
+    function pause(){if(timer!==null)clearInterval(timer);timer=null;$('play').textContent='▶ 自动播放';}
+    function render(){const steps=sc[mode].steps,st=steps[index];$('modeDesc').textContent=sc[mode].desc;$('progress').textContent=`步骤 ${index+1} / ${steps.length}`;$('bar').style.width=((index+1)/steps.length*100)+'%';$('bp').textContent=st.bp;$('stepTitle').textContent=st.title;$('desc').innerHTML=st.desc;$('message').textContent=st.message;$('session').textContent=st.session;$('file').textContent=st.file;$('code').textContent=st.code;$('route').textContent=st.route;$('chan').textContent=st.chan;$('thread').textContent=st.thread;$('log').textContent=steps.slice(0,index+1).flatMap(x=>x.logs).join('\n');$('prev').disabled=index===0;$('next').disabled=index===steps.length-1;nodes.forEach(([, ,type],i)=>{$('node'+i).className='node '+type+(st.skip.includes(i)?' skip':'')+(i===st.node?' active':'');});document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));$('timeline').replaceChildren();steps.forEach((x,i)=>{const b=document.createElement('button');b.textContent=(i+1)+' · '+x.bp;b.title=x.title;b.setAttribute('aria-pressed',String(i===index));b.onclick=()=>{pause();index=i;render();};$('timeline').append(b);});}
+    function move(d){index=Math.max(0,Math.min(sc[mode].steps.length-1,index+d));if(index===sc[mode].steps.length-1)pause();render();}
+    function play(){if(timer!==null){pause();return;}if(index===sc[mode].steps.length-1)index=0;render();$('play').textContent='⏸ 暂停';timer=setInterval(()=>move(1),Number($('speed').value));}
+    $('prev').onclick=()=>{pause();move(-1);};$('next').onclick=()=>{pause();move(1);};$('restart').onclick=()=>{pause();index=0;render();};$('play').onclick=play;$('speed').onchange=()=>{if(timer!==null){pause();play();}};
+    document.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT','BUTTON','SUMMARY','A'].includes(e.target.tagName)||e.ctrlKey||e.altKey||e.metaKey)return;if(e.key==='ArrowRight'){e.preventDefault();pause();move(1);}else if(e.key==='ArrowLeft'){e.preventDefault();pause();move(-1);}else if(e.code==='Space'){e.preventDefault();play();}});
+    // ---------- 静态图：SVG 生成 ----------
+    const NS='http://www.w3.org/2000/svg';
+    const C={in:'#1765d1',out:'#087f67',biz:'#6d3fc0',http:'#b45a0b',duplex:'#b45a0b',tail:'#8696a8',muted:'#5c6f84',line:'#d9e3ed',ink:'#172b46'};
+    function el(tag,attrs,parent,text){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(text!==undefined)e.textContent=text;if(parent)parent.append(e);return e;}
+    function markers(svg,colors){const defs=el('defs',{},svg);for(const [k,c] of Object.entries(colors)){const m=el('marker',{id:'arr-'+svg.id+'-'+k,viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'},defs);el('path',{d:'M0,0 L10,5 L0,10 z',fill:c},m);}}
+    function drawPipeline(){
+     const svg=$('pipeSvg'),W=1200,H=300,bw=121,gap=9,x0=(W-(9*bw+8*gap))/2,by=100,bh=66;
+     svg.setAttribute('viewBox',`0 0 ${W} ${H}`);markers(svg,{in:C.in,out:C.out});
+     const cx=i=>x0+i*(bw+gap)+bw/2;
+     const fill={duplex:'#fff3e6',in:'#eaf2ff',out:'#e9f8f2',biz:'#f4effd',tail:'#f3f5f8'};
+     // 线程分组
+     const band=(i,j,label,color)=>{const x1=x0+i*(bw+gap),x2=x0+j*(bw+gap)+bw;el('path',{d:`M${x1},${by+bh+58} v8 H${x2} v-8`,fill:'none',stroke:color,'stroke-width':1.5},svg);el('text',{x:(x1+x2)/2,y:by+bh+86,'text-anchor':'middle','font-size':13,fill:color},svg,label);};
+     band(0,6,'worker EventLoop 线程（每个 Channel 固定一个）',C.in);band(7,7,'bizGroup 线程',C.biz);
+     // 节点
+     nodes.forEach(([name,label,type],i)=>{const x=x0+i*(bw+gap);el('rect',{x,y:by,width:bw,height:bh,rx:10,fill:fill[type],stroke:C[type],'stroke-width':1.6},svg);el('text',{x:x+bw/2,y:by+27,'text-anchor':'middle','font-size':14,'font-weight':700,'font-family':'Consolas,monospace',fill:C.ink},svg,name);el('text',{x:x+bw/2,y:by+47,'text-anchor':'middle','font-size':9.5,fill:C.muted},svg,label.replace('HeadContext ⇄ Socket','⇄ Socket'));});
+     // 入站弧线（上方）
+     const inPath=[0,1,2,3,4,7];
+     for(let k=0;k<inPath.length-1;k++){const a=cx(inPath[k])+14,b=cx(inPath[k+1])-14,jump=inPath[k+1]-inPath[k]>1,h=jump?62:34;el('path',{d:`M${a},${by-2} C${a},${by-h} ${b},${by-h} ${b},${by-2}`,fill:'none',stroke:C.in,'stroke-width':2,'marker-end':'url(#arr-pipeSvg-in)'},svg);if(jump)el('text',{x:(a+b)/2,y:by-h+12,'text-anchor':'middle','font-size':12,fill:C.in},svg,'跳过 2 个 Encoder');}
+     el('text',{x:x0,y:22,'font-size':14,'font-weight':700,fill:C.in},svg,'入站 channelRead：Socket → Head → … → business');
+     // 出站弧线（下方）
+     const outPath=[7,6,5,1,0];
+     for(let k=0;k<outPath.length-1;k++){const a=cx(outPath[k])-14,b=cx(outPath[k+1])+14,jump=outPath[k]-outPath[k+1]>1,h=jump?44:30;el('path',{d:`M${a},${by+bh+2} C${a},${by+bh+h} ${b},${by+bh+h} ${b},${by+bh+2}`,fill:'none',stroke:C.out,'stroke-width':2,'marker-end':'url(#arr-pipeSvg-out)'},svg);if(jump)el('text',{x:(a+b)/2,y:by+bh+h+2,'text-anchor':'middle','font-size':12,fill:C.out},svg,'跳过 3 个 Decoder');}
+     el('text',{x:W-x0,y:H-12,'text-anchor':'end','font-size':14,'font-weight':700,fill:C.out},svg,'出站 write：business（或 Tail）→ … → Head → Socket');
+    }
+    function drawSequence(){
+     const svg=$('seqSvg'),W=1300;
+     // late: 在第 7 段才创建的参与者（新 tom 终端、它在服务端的 Channel c3），头部画在出现的位置
+     const lanes={A2:{x:80,t:'终端 A′',s:'新 tom',late:true},A:{x:240,t:'终端 A',s:'MineNettyClient · tom'},a1:{x:480,t:'服务端 Channel a1',s:'tom 的 Pipeline'},c3:{x:660,t:'服务端 Channel c3',s:'新 tom 的 Pipeline',late:true},b2:{x:860,t:'服务端 Channel b2',s:'jerry 的 Pipeline'},B:{x:1080,t:'终端 B',s:'MineNettyClient · jerry'},H:{x:1230,t:'curl',s:'HTTP :8080'}};
+     const color={c2s:C.in,s2c:C.out,inner:C.biz,http:C.http};
+     const rows=[
+      ['phase','1  建连 + 登录（连接成功后客户端自动发 LOGIN）'],
+      ['msg','A','a1','c2s','connect + LOGIN','{"from":"tom","type":"LOGIN"}'],
+      ['note','a1','bind(tom → a1)'],
+      ['msg','a1','A','s2c','LOGIN_OK','ctx.writeAndFlush',true],
+      ['msg','B','b2','c2s','connect + LOGIN','{"from":"jerry","type":"LOGIN"}'],
+      ['note','b2','bind(jerry → b2)'],
+      ['msg','b2','B','s2c','LOGIN_OK','',true],
+      ['phase','2  A → B 聊天（终端 A 输入一行 JSON）'],
+      ['note','A','{"content":"hi","to":"jerry","type":"CHAT"}'],
+      ['msg','A','a1','c2s','CHAT','parseInput 校验，from 自动填 tom'],
+      ['msg','a1','b2','inner','sessionManager.send(jerry)','a1 入站解码 → business → 找到 b2'],
+      ['msg','b2','B','s2c','CHAT','b2 出站编码 channel.writeAndFlush'],
+      ['note','B','<< {"content":"hi","from":"tom","to":"jerry","type":"CHAT"}'],
+      ['phase','3  B → A 回复（完全对称）'],
+      ['note','B','{"content":"yo","to":"tom","type":"CHAT"}'],
+      ['msg','B','b2','c2s','CHAT','from 自动填 jerry'],
+      ['msg','b2','a1','inner','sessionManager.send(tom)','b2 入站解码 → business → 找到 a1'],
+      ['msg','a1','A','s2c','CHAT','a1 出站编码'],
+      ['note','A','<< {"content":"yo","from":"jerry","to":"tom","type":"CHAT"}'],
+      ['phase','4  HTTP 推送（Tomcat 线程 → Netty Channel）'],
+      ['msg','H','b2','http','POST /netty/push?to=jerry&content=notice','Controller → sessionManager.send'],
+      ['msg','b2','B','s2c','PUSH','content=notice'],
+      ['msg','b2','H','http','{"to":"jerry","sent":true}','',true],
+      ['phase','5  心跳（写空闲 20s 自动发送，日志为 debug）'],
+      ['msg','A','a1','c2s','PING','idle 刷新读时间，60s 读空闲不会触发'],
+      ['msg','a1','A','s2c','PONG','',true],
+      ['phase','6  对方不在线'],
+      ['msg','A','a1','c2s','CHAT to=nobody','sessionManager.send 返回 false'],
+      ['msg','a1','A','s2c','ERROR','nobody is offline',true],
+      ['phase','7  重复登录踢下线（另一个终端又以 tom 启动）'],
+      ['create','A2','c3'],
+      ['msg','A2','c3','c2s','connect + LOGIN','{"from":"tom","type":"LOGIN"}'],
+      ['note','c3','bind(tom → c3)：会话表替换，拿到旧连接 a1'],
+      ['msg','c3','a1','inner','写 KICKED','old.writeAndFlush'],
+      ['msg','a1','A','s2c','KICKED','tom logged in elsewhere'],
+      ['note','a1','写完成回调 → close(a1)，unbind 不会误删 c3'],
+      ['note','A','kicked offline, will not reconnect'],
+      ['msg','c3','A2','s2c','LOGIN_OK','ctx.writeAndFlush',true],
+      ['note','A2','新 tom 在线，会话表 tom → c3'],
+     ];
+     markers(svg,color);
+     const lifeG=el('g',{},svg),body=el('g',{},svg),head=el('g',{},svg);
+     const box=(l,top)=>{const bw=l.t==='curl'?96:150;el('rect',{x:l.x-bw/2,y:top,width:bw,height:50,rx:9,fill:'white',stroke:l.late?'#c9a26b':'#9fb3c8','stroke-width':1.4},head);el('text',{x:l.x,y:top+21,'text-anchor':'middle','font-size':14,'font-weight':700,fill:C.ink},head,l.t);el('text',{x:l.x,y:top+39,'text-anchor':'middle','font-size':11.5,fill:C.muted},head,l.s);};
+     let y=96;
+     for(const r of rows){
+      if(r[0]==='phase'){y+=8;el('rect',{x:12,y:y-17,width:W-24,height:26,rx:6,fill:'#eef3f9'},body);el('text',{x:24,y:y+1,'font-size':13.5,'font-weight':700,fill:C.ink},body,r[1]);y+=34;continue;}
+      if(r[0]==='create'){for(const k of r.slice(1)){lanes[k].top=y-6;box(lanes[k],y-6);}y+=66;continue;}
+      if(r[0]==='note'){const l=lanes[r[1]],t=el('text',{y:y+4,'font-size':12,'font-family':'Consolas,monospace',fill:C.ink},body,r[2]);const w=t.getBBox().width;let x=l.x-w/2;x=Math.max(20,Math.min(W-20-w,x));t.setAttribute('x',x);const rect=el('rect',{x:x-8,y:y-12,width:w+16,height:23,rx:5,fill:'#fffbe8',stroke:'#e6d48a'});body.insertBefore(rect,t);y+=42;continue;}
+      const [,f,to,kind,label,sub,dashed]=r,x1=lanes[f].x,x2=lanes[to].x,dir=x2>x1?1:-1;
+      el('line',{x1:x1+dir*4,y1:y,x2:x2-dir*4,y2:y,stroke:color[kind],'stroke-width':2,'stroke-dasharray':dashed?'6 4':'none','marker-end':`url(#arr-seqSvg-${kind})`},body);
+      const mid=(x1+x2)/2;
+      el('text',{x:mid,y:y-8,'text-anchor':'middle','font-size':13,'font-weight':600,fill:color[kind]},body,label);
+      if(sub){el('text',{x:mid,y:y+17,'text-anchor':'middle','font-size':11.5,fill:C.muted,'font-family':sub.startsWith('{')?'Consolas,monospace':'inherit'},body,sub);y+=14;}
+      y+=38;
+     }
+     const H=y+10;svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+     for(const l of Object.values(lanes)){const top=l.late?l.top:10;el('line',{x1:l.x,y1:top+52,x2:l.x,y2:H-6,stroke:'#c3cfdc','stroke-width':1.5,'stroke-dasharray':'4 5'},lifeG);if(!l.late)box(l,10);}
+    }
+    drawPipeline();drawSequence();
+    render();
+</script>
+</body>
+</html>

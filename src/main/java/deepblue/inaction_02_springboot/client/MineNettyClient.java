@@ -66,7 +66,7 @@ public final class MineNettyClient {
     public static void main(String[] args) {
         MineNettyClient client = new MineNettyClient(args.length > 0 ? args[0] : "tom",
                 args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_PORT);
-        log.info("MineNettyClient main invoke, client={}", client);
+        log.info("MineNettyClient main invoke, userId={}, client={}", client.userId, client);
         client.connect();
         client.readConsole();
     }
@@ -78,16 +78,16 @@ public final class MineNettyClient {
     }
 
     private void connect() {
-        log.info("MineNettyClient connect invoke, {} connecting to {}:{}", userId, HOST, port);
+        log.info("MineNettyClient connect invoke, userId={}, connecting to {}:{}", userId, HOST, port);
         ChannelFuture future = bootstrap.connect(HOST, port);
         future.addListener((ChannelFuture f) -> {
             if (f.isSuccess()) {
                 reconnectDelaySeconds = 1;
                 channel = f.channel();
-                log.info("MineNettyClient connect invoke, {} connect ok, send LOGIN as {}", channel.id().asShortText(), userId);
+                log.info("MineNettyClient connect invoke, userId={}, {} connect ok, send LOGIN", userId, channel.id().asShortText());
                 send(channel, new Message(MessageEnum.LOGIN, userId, null, null));
             } else {
-                log.warn("MineNettyClient connect invoke, connect to {}:{} failed: {}", HOST, port, f.cause().toString());
+                log.warn("MineNettyClient connect invoke, userId={}, connect to {}:{} failed: {}", userId, HOST, port, f.cause().toString());
                 scheduleReconnect();
             }
         });
@@ -97,7 +97,7 @@ public final class MineNettyClient {
     private void scheduleReconnect() {
         int delay = reconnectDelaySeconds;
         reconnectDelaySeconds = Math.min(reconnectDelaySeconds * 2, MAX_RECONNECT_DELAY_SECONDS);
-        log.info("MineNettyClient scheduleReconnect invoke, reconnect in {}s", delay);
+        log.info("MineNettyClient scheduleReconnect invoke, userId={}, reconnect in {}s", userId, delay);
         group.schedule(this::connect, delay, TimeUnit.SECONDS);
     }
 
@@ -122,19 +122,19 @@ public final class MineNettyClient {
             try {
                 message = parseInput(userId, line);
             } catch (IllegalArgumentException e) {
-                log.warn("MineNettyClient readConsole invoke, invalid input: {} -> {}", line, e.getMessage());
+                log.warn("MineNettyClient readConsole invoke, userId={}, invalid input: {} -> {}", userId, line, e.getMessage());
                 System.out.println(USAGE);
                 continue;
             }
             Channel ch = channel;
             if (ch == null || !ch.isActive()) {
-                log.warn("MineNettyClient readConsole invoke, not connected, drop: {}", message);
+                log.warn("MineNettyClient readConsole invoke, userId={}, not connected, drop: {}", userId, message);
                 continue;
             }
-            log.info("MineNettyClient readConsole invoke, {} >> {}", ch.id().asShortText(), JSON.toJSONString(message));
+            log.info("MineNettyClient readConsole invoke, userId={}, {} >> {}", userId, ch.id().asShortText(), JSON.toJSONString(message));
             send(ch, message);
         }
-        log.info("MineNettyClient readConsole invoke, {} quit, shutting down", userId);
+        log.info("MineNettyClient readConsole invoke, userId={}, quit, shutting down", userId);
         group.shutdownGracefully();
     }
 
@@ -178,7 +178,7 @@ public final class MineNettyClient {
         }
         String from = json.getString("from");
         if (from != null && !from.equals(userId)) {
-            log.warn("MineNettyClient parseInput invoke, from={} ignored, use sender {}", from, userId);
+            log.warn("MineNettyClient parseInput invoke, userId={}, from={} ignored, use sender", userId, from);
         }
         return new Message(type, userId, to, content);
     }
@@ -186,7 +186,7 @@ public final class MineNettyClient {
     private static void send(Channel ch, Message message) {
         ch.writeAndFlush(message).addListener((ChannelFuture f) -> {
             if (!f.isSuccess()) {
-                log.warn("MineNettyClient send invoke, {} send failed: {}", ch.id().asShortText(), message, f.cause());
+                log.warn("MineNettyClient send invoke, userId={}, {} send failed: {}", message.getFrom(), ch.id().asShortText(), message, f.cause());
             }
         });
     }

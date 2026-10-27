@@ -57,6 +57,6 @@ public class NettyServerInitializer extends ChannelInitializer<SocketChannel> {
         pipeline.addLast("jsonEncoder", jsonMessageEncoder);
         // ① 业务 Handler 跑在 bizGroup 上，同一个 Channel 的事件始终由同一个业务线程处理，顺序不变。
         pipeline.addLast(bizGroup, "business", businessHandler);
-        log.info("NettyServerInitializer initChannel invoke, {} pipeline initialized: {}", ch.id().asShortText(), pipeline.names());
+        log.info("NettyServerInitializer initChannel invoke, userId=-, {} pipeline initialized: {}", ch.id().asShortText(), pipeline.names());
     }
 }

@@ -33,15 +33,15 @@ public class NettyPushController {
 
     @PostMapping("/push")
     public Map<String, Object> push(@RequestParam String to, @RequestParam String content) {
-        log.info("NettyPushController push invoke, http push to={} content={}", to, content);
+        log.info("NettyPushController push invoke, userId={}, http push content={}", to, content);
         boolean sent = sessionManager.send(to, Message.of(MessageEnum.PUSH, content));
-        log.info("NettyPushController push invoke, http push to={} sent={}", to, sent);
+        log.info("NettyPushController push invoke, userId={}, http push sent={}", to, sent);
         return Map.of("to", to, "sent", sent);
     }
 
     @PostMapping("/broadcast")
     public Map<String, Object> broadcast(@RequestParam String content) {
-        log.info("NettyPushController broadcast invoke, http broadcast content={}", content);
+        log.info("NettyPushController broadcast invoke, userId=-, http broadcast content={}", content);
         int count = sessionManager.broadcast(Message.of(MessageEnum.PUSH, content));
         return Map.of("sent", count);
     }

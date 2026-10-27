@@ -45,7 +45,7 @@ public class NettyServer implements SmartLifecycle {
 
     @Override
     public void start() {
-        log.info("NettyServer start invoke, Netty server starting: {}", properties);
+        log.info("NettyServer start invoke, userId=-, Netty server starting: {}", properties);
         // ① 主从 Reactor：boss 负责 accept，worker 负责 IO，biz 负责业务。
         bossGroup = new NioEventLoopGroup(properties.getBossThreads());
         workerGroup = new NioEventLoopGroup(properties.getWorkerThreads());
@@ -68,12 +68,12 @@ public class NettyServer implements SmartLifecycle {
         // ⑤ 启动阶段允许 sync：这里是 Spring 启动线程，不是 EventLoop 线程。
         serverChannel = bootstrap.bind(properties.getPort()).syncUninterruptibly().channel();
         running = true;
-        log.info("NettyServer start invoke, Netty server started on port {}", getPort());
+        log.info("NettyServer start invoke, userId=-, Netty server started on port {}", getPort());
     }
 
     @Override
     public void stop() {
-        log.info("NettyServer stop invoke, Netty server stopping");
+        log.info("NettyServer stop invoke, userId=-, Netty server stopping");
         running = false;
         if (serverChannel != null) {
             serverChannel.close().syncUninterruptibly();
@@ -82,7 +82,7 @@ public class NettyServer implements SmartLifecycle {
         shutdown(bossGroup);
         shutdown(workerGroup);
         shutdown(bizGroup);
-        log.info("NettyServer stop invoke, Netty server stopped");
+        log.info("NettyServer stop invoke, userId=-, Netty server stopped");
     }
 
     @Override

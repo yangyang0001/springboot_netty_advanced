@@ -2,6 +2,7 @@ package deepblue.inaction_02_springboot.handler.outbound;
 
 import com.alibaba.fastjson.JSON;
 import deepblue.inaction_02_springboot.model.Message;
+import deepblue.inaction_02_springboot.session.ChannelSessionManager;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageEncoder;
@@ -23,9 +24,9 @@ public class JsonMessageEncoder extends MessageToMessageEncoder<Message> {
     protected void encode(ChannelHandlerContext ctx, Message msg, List<Object> out) {
         String json = JSON.toJSONString(msg);
         if (msg.getType() != null && msg.getType().isHeartbeat()) {
-            log.debug("JsonMessageEncoder encode invoke, {} encode -> {}", ctx.channel().id().asShortText(), json);
+            log.debug("JsonMessageEncoder encode invoke, userId={}, {} encode -> {}", ChannelSessionManager.userId(ctx.channel()), ctx.channel().id().asShortText(), json);
         } else {
-            log.info("JsonMessageEncoder encode invoke, {} encode -> {}", ctx.channel().id().asShortText(), json);
+            log.info("JsonMessageEncoder encode invoke, userId={}, {} encode -> {}", ChannelSessionManager.userId(ctx.channel()), ctx.channel().id().asShortText(), json);
         }
         out.add(json + "\n");
     }
