@@ -7,7 +7,7 @@ import junit.framework.TestSuite;
 /**
  * Unit test for simple App.
  */
-public class NettyApplicationTest
+public class NettyAdvancedApplicationTest
     extends TestCase
 {
     /**
@@ -15,7 +15,7 @@ public class NettyApplicationTest
      *
      * @param testName name of the test case
      */
-    public NettyApplicationTest(String testName )
+    public NettyAdvancedApplicationTest(String testName )
     {
         super( testName );
     }
@@ -25,7 +25,7 @@ public class NettyApplicationTest
      */
     public static Test suite()
     {
-        return new TestSuite( NettyApplicationTest.class );
+        return new TestSuite( NettyAdvancedApplicationTest.class );
     }
 
     /**
