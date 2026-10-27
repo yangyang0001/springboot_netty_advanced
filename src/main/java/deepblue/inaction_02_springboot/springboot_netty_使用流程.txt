@@ -47,7 +47,7 @@ Spring Boot + Netty 使用流程 (deepblue.inaction_02_springboot)
 	│   ├── Message                        type / from / to / content
 	│   └── MessageType                    消息类型枚举
 	└── client
-	    ├── NettyClientDemo                独立 main 客户端 (不依赖 Spring), 控制台输入 "<to> <content>" 发消息
+	    ├── MineNettyClient                独立 main 客户端 (不依赖 Spring), 控制台输入 "<to> <content>" 发消息
 	    └── NettyClientInitializer         客户端 Pipeline 组装, 与服务端对称
 
 	相关文件:
@@ -136,7 +136,7 @@ Spring Boot + Netty 使用流程 (deepblue.inaction_02_springboot)
 	        (8080 / 9000 被占用时会启动失败, 先停掉旧进程, 或改 server.port / netty.server.port)
 
 	    2. 启动两个客户端:
-	        运行 deepblue.inaction_02_springboot.client.NettyClientDemo, Program arguments 填 jerry
+	        运行 deepblue.inaction_02_springboot.client.MineNettyClient, Program arguments 填 jerry
 	        再复制一个运行配置, Program arguments 填 tom
 	        (第二个参数可选, 为服务端 TCP 端口, 默认 9000, 例如: tom 19000)
 	        IDEA 中同一个 main 要运行两份, 需在运行配置里勾选 Modify options → Allow multiple instances
@@ -184,6 +184,6 @@ Spring Boot + Netty 使用流程 (deepblue.inaction_02_springboot)
 	    然后在 Git Bash 中:
 	        CP="target/classes;$(cat target/cp.txt)"
 	        java -cp "$CP" deepblue.NettyAdvancedApplication
-	        java -cp "$CP" deepblue.inaction_02_springboot.client.NettyClientDemo jerry
-	        java -cp "$CP" deepblue.inaction_02_springboot.client.NettyClientDemo tom
+	        java -cp "$CP" deepblue.inaction_02_springboot.client.MineNettyClient jerry
+	        java -cp "$CP" deepblue.inaction_02_springboot.client.MineNettyClient tom
 	    后续操作同方式二的第 3 ~ 10 步。

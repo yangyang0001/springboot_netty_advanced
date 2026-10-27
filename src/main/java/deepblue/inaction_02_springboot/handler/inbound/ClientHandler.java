@@ -8,7 +8,7 @@ import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 
 /**
- * 客户端 Handler（NettyClientDemo 使用，不是 Spring Bean）：
+ * 客户端 Handler（MineNettyClient 使用，不是 Spring Bean）：
  * 打印收到的消息、写空闲时发心跳、断线时回调重连（被踢下线时不重连）。
  * 每个连接 new 一个实例，所以 kicked 状态只属于当前连接。
  */

@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
  *
  * 演示：写空闲发心跳、断线指数退避重连（关掉服务端再启动即可观察）。
  */
-public final class NettyClientDemo {
+public final class MineNettyClient {
 
     private static final String HOST = "127.0.0.1";
     private static final int DEFAULT_PORT = 9000;
@@ -34,7 +34,7 @@ public final class NettyClientDemo {
     private volatile Channel channel;
     private int reconnectDelaySeconds = 1;
 
-    private NettyClientDemo(String userId, int port) {
+    private MineNettyClient(String userId, int port) {
         this.userId = userId;
         this.port = port;
         bootstrap.group(group)
@@ -45,7 +45,7 @@ public final class NettyClientDemo {
     }
 
     public static void main(String[] args) {
-        NettyClientDemo client = new NettyClientDemo(args.length > 0 ? args[0] : "tom",
+        MineNettyClient client = new MineNettyClient(args.length > 0 ? args[0] : "tom",
                 args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_PORT);
         client.connect();
         client.readConsole();

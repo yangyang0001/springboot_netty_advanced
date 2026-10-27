@@ -1673,7 +1673,7 @@ Netty:
 		    handler/outbound/JsonMessageEncoder    @Sharable 单例, Message → 一行 JSON
 		    session/ChannelSessionManager     userId ⇄ Channel, 重复登录踢旧连接, 检查 isWritable 后再写
 		    controller/NettyPushController    GET /netty/online, POST /netty/push, POST /netty/broadcast (HTTP → TCP)
-		    client/NettyClientDemo            独立 main 客户端: 写空闲发心跳 + 指数退避重连
+		    client/MineNettyClient            独立 main 客户端: 写空闲发心跳 + 指数退避重连
 		    client/NettyClientInitializer     客户端 Pipeline 组装, 与服务端对称
 		    test: deepblue.NettyAdvancedApplicationTest 启动整个容器, 用 Socket 验证聊天、心跳、HTTP 推送
 		- 协议: 一行一个 JSON (
@@ -1693,7 +1693,7 @@ Netty:
 		    · 关闭: stop() 中先关 serverChannel, 再依次 shutdownGracefully boss / worker / biz。
 		- 运行:
 		    1. 启动 NettyAdvancedApplication (HTTP 8080, TCP 9000);
-		    2. 启动两个 NettyClientDemo, 程序参数分别为 tom、jerry; 在 tom 的控制台输入 "jerry hello";
+		    2. 启动两个 MineNettyClient, 程序参数分别为 tom、jerry; 在 tom 的控制台输入 "jerry hello";
 		    3. curl http://localhost:8080/netty/online
 		       curl -X POST "http://localhost:8080/netty/push?to=jerry&content=hi"
 		       curl -X POST "http://localhost:8080/netty/broadcast?content=notice"
