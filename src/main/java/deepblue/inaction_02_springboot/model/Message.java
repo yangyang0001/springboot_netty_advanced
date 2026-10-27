@@ -13,12 +13,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class Message {
 
-    private MessageType type;
+    private MessageEnum type;
     private String from;
     private String to;
     private String content;
 
-    public static Message of(MessageType type, String content) {
+    public static Message of(MessageEnum type, String content) {
         return new Message(type, "server", null, content);
     }
 }

@@ -1,7 +1,7 @@
 package deepblue.inaction_02_springboot.session;
 
 import deepblue.inaction_02_springboot.model.Message;
-import deepblue.inaction_02_springboot.model.MessageType;
+import deepblue.inaction_02_springboot.model.MessageEnum;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.AttributeKey;
@@ -33,7 +33,7 @@ public class ChannelSessionManager {
             log.info("ChannelSessionManager bind invoke, [{}] kick old channel of user={}, new channel={}",
                     old.id().asShortText(), userId, channel.id().asShortText());
             old.attr(USER_ID).set(null);
-            old.writeAndFlush(Message.of(MessageType.KICKED, userId + " logged in elsewhere"))
+            old.writeAndFlush(Message.of(MessageEnum.KICKED, userId + " logged in elsewhere"))
                     .addListener((ChannelFuture f) -> {
                         log.info("ChannelSessionManager bind invoke, [{}] kicked notice written={}, close", old.id().asShortText(), f.isSuccess());
                         f.channel().close();

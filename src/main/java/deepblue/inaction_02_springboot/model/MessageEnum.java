@@ -1,7 +1,7 @@
 package deepblue.inaction_02_springboot.model;
 
 /** 应用层协议的消息类型。 */
-public enum MessageType {
+public enum MessageEnum {
     /** 客户端 → 服务端：登录，绑定 userId 和 Channel。 */
     LOGIN,
     /** 服务端 → 客户端：登录成功。 */

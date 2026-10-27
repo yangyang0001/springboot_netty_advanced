@@ -1,7 +1,7 @@
 package deepblue.inaction_02_springboot.handler.inbound;
 
 import deepblue.inaction_02_springboot.model.Message;
-import deepblue.inaction_02_springboot.model.MessageType;
+import deepblue.inaction_02_springboot.model.MessageEnum;
 import deepblue.inaction_02_springboot.session.ChannelSessionManager;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandler;
@@ -47,38 +47,38 @@ public class ServerBusinessHandler extends SimpleChannelInboundHandler<Message> 
         log.info("ServerBusinessHandler channelRead0 invoke, [{}] recv user={} msg={}", channelId(ctx), userId, msg);
         if (msg.getType() == null) {
             log.warn("ServerBusinessHandler channelRead0 invoke, [{}] reject: type is required, msg={}", channelId(ctx), msg);
-            reply(ctx, Message.of(MessageType.ERROR, "type is required"));
+            reply(ctx, Message.of(MessageEnum.ERROR, "type is required"));
             return;
         }
         switch (msg.getType()) {
             case LOGIN -> {
                 if (msg.getFrom() == null || msg.getFrom().isBlank()) {
                     log.warn("ServerBusinessHandler channelRead0 invoke, [{}] login rejected: from is required", channelId(ctx));
-                    reply(ctx, Message.of(MessageType.ERROR, "from is required"));
+                    reply(ctx, Message.of(MessageEnum.ERROR, "from is required"));
                     return;
                 }
                 // 真实项目这里通常是查库 / 校验 token，是阻塞操作，所以业务 Handler 要放在业务线程池。
                 sessionManager.bind(msg.getFrom(), ctx.channel());
                 log.info("ServerBusinessHandler channelRead0 invoke, [{}] login: {}", channelId(ctx), msg.getFrom());
-                reply(ctx, Message.of(MessageType.LOGIN_OK, "welcome " + msg.getFrom()));
+                reply(ctx, Message.of(MessageEnum.LOGIN_OK, "welcome " + msg.getFrom()));
             }
-            case PING -> reply(ctx, Message.of(MessageType.PONG, null));
+            case PING -> reply(ctx, Message.of(MessageEnum.PONG, null));
             case CHAT -> {
                 if (userId == null) {
                     log.warn("ServerBusinessHandler channelRead0 invoke, [{}] chat rejected: not logged in", channelId(ctx));
-                    reply(ctx, Message.of(MessageType.ERROR, "login first"));
+                    reply(ctx, Message.of(MessageEnum.ERROR, "login first"));
                     return;
                 }
                 msg.setFrom(userId);
                 log.info("ServerBusinessHandler channelRead0 invoke, [{}] chat {} -> {}: {}", channelId(ctx), userId, msg.getTo(), msg.getContent());
                 if (!sessionManager.send(msg.getTo(), msg)) {
                     log.info("ServerBusinessHandler channelRead0 invoke, [{}] chat {} -> {} failed: target offline", channelId(ctx), userId, msg.getTo());
-                    reply(ctx, Message.of(MessageType.ERROR, msg.getTo() + " is offline"));
+                    reply(ctx, Message.of(MessageEnum.ERROR, msg.getTo() + " is offline"));
                 }
             }
             default -> {
                 log.warn("ServerBusinessHandler channelRead0 invoke, [{}] unsupported type {}", channelId(ctx), msg.getType());
-                reply(ctx, Message.of(MessageType.ERROR, "unsupported type " + msg.getType()));
+                reply(ctx, Message.of(MessageEnum.ERROR, "unsupported type " + msg.getType()));
             }
         }
     }

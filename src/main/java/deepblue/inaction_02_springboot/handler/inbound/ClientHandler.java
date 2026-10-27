@@ -1,7 +1,7 @@
 package deepblue.inaction_02_springboot.handler.inbound;
 
 import deepblue.inaction_02_springboot.model.Message;
-import deepblue.inaction_02_springboot.model.MessageType;
+import deepblue.inaction_02_springboot.model.MessageEnum;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.timeout.IdleState;
@@ -34,10 +34,10 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Message msg) {
-        if (msg.getType() == MessageType.KICKED) {
+        if (msg.getType() == MessageEnum.KICKED) {
             kicked = true;
         }
-        if (msg.getType() == MessageType.PONG) {
+        if (msg.getType() == MessageEnum.PONG) {
             log.info("ClientHandler channelRead0 invoke, [{}] << {}", channelId(ctx), msg);
         } else {
             log.info("ClientHandler channelRead0 invoke, [{}] << {}", channelId(ctx), msg);
@@ -49,7 +49,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
         if (evt instanceof IdleStateEvent e && e.state() == IdleState.WRITER_IDLE) {
             // ⑥ 写空闲：一段时间没发数据，主动发心跳，防止被服务端的读空闲踢掉。
             log.info("ClientHandler userEventTriggered invoke, [{}] writer idle, send PING", channelId(ctx));
-            ctx.writeAndFlush(new Message(MessageType.PING, userId, null, null));
+            ctx.writeAndFlush(new Message(MessageEnum.PING, userId, null, null));
         } else {
             super.userEventTriggered(ctx, evt);
         }

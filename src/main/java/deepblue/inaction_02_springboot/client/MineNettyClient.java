@@ -1,7 +1,7 @@
 package deepblue.inaction_02_springboot.client;
 
 import deepblue.inaction_02_springboot.model.Message;
-import deepblue.inaction_02_springboot.model.MessageType;
+import deepblue.inaction_02_springboot.model.MessageEnum;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
@@ -61,7 +61,7 @@ public final class MineNettyClient {
                 reconnectDelaySeconds = 1;
                 channel = f.channel();
                 log.info("MineNettyClient connect invoke, [{}] connect ok, send LOGIN as {}", channel.id().asShortText(), userId);
-                send(channel, new Message(MessageType.LOGIN, userId, null, null));
+                send(channel, new Message(MessageEnum.LOGIN, userId, null, null));
             } else {
                 log.warn("MineNettyClient connect invoke, connect to {}:{} failed: {}", HOST, port, f.cause().toString());
                 scheduleReconnect();
@@ -94,7 +94,7 @@ public final class MineNettyClient {
             Channel ch = channel;
             if (parts.length == 2 && ch != null && ch.isActive()) {
                 log.info("MineNettyClient readConsole invoke, [{}] >> CHAT to={} content={}", ch.id().asShortText(), parts[0], parts[1]);
-                send(ch, new Message(MessageType.CHAT, userId, parts[0], parts[1]));
+                send(ch, new Message(MessageEnum.CHAT, userId, parts[0], parts[1]));
             } else {
                 System.out.println("usage: <to> <content>");
             }

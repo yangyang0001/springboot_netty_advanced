@@ -2,7 +2,7 @@ package deepblue;
 
 import com.alibaba.fastjson.JSON;
 import deepblue.inaction_02_springboot.model.Message;
-import deepblue.inaction_02_springboot.model.MessageType;
+import deepblue.inaction_02_springboot.model.MessageEnum;
 import deepblue.inaction_02_springboot.server.NettyServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,20 +37,20 @@ class NettyAdvancedApplicationTest {
         try (TcpClient tom = new TcpClient(nettyServer.getPort());
              TcpClient jerry = new TcpClient(nettyServer.getPort())) {
 
-            assertThat(tom.login("tom").getType()).isEqualTo(MessageType.LOGIN_OK);
-            assertThat(jerry.login("jerry").getType()).isEqualTo(MessageType.LOGIN_OK);
+            assertThat(tom.login("tom").getType()).isEqualTo(MessageEnum.LOGIN_OK);
+            assertThat(jerry.login("jerry").getType()).isEqualTo(MessageEnum.LOGIN_OK);
 
-            tom.send(new Message(MessageType.PING, "tom", null, null));
-            assertThat(tom.receive().getType()).isEqualTo(MessageType.PONG);
+            tom.send(new Message(MessageEnum.PING, "tom", null, null));
+            assertThat(tom.receive().getType()).isEqualTo(MessageEnum.PONG);
 
-            tom.send(new Message(MessageType.CHAT, "tom", "jerry", "hi jerry"));
+            tom.send(new Message(MessageEnum.CHAT, "tom", "jerry", "hi jerry"));
             Message chat = jerry.receive();
-            assertThat(chat.getType()).isEqualTo(MessageType.CHAT);
+            assertThat(chat.getType()).isEqualTo(MessageEnum.CHAT);
             assertThat(chat.getFrom()).isEqualTo("tom");
             assertThat(chat.getContent()).isEqualTo("hi jerry");
 
-            tom.send(new Message(MessageType.CHAT, "tom", "nobody", "hello?"));
-            assertThat(tom.receive().getType()).isEqualTo(MessageType.ERROR);
+            tom.send(new Message(MessageEnum.CHAT, "tom", "nobody", "hello?"));
+            assertThat(tom.receive().getType()).isEqualTo(MessageEnum.ERROR);
 
             String online = restTemplate.getForObject("/netty/online", String.class);
             assertThat(online).contains("tom", "jerry");
@@ -58,7 +58,7 @@ class NettyAdvancedApplicationTest {
             String pushResult = restTemplate.postForObject("/netty/push?to=jerry&content=from-http", null, String.class);
             assertThat(pushResult).contains("\"sent\":true");
             Message push = jerry.receive();
-            assertThat(push.getType()).isEqualTo(MessageType.PUSH);
+            assertThat(push.getType()).isEqualTo(MessageEnum.PUSH);
             assertThat(push.getContent()).isEqualTo("from-http");
         }
     }
@@ -68,12 +68,12 @@ class NettyAdvancedApplicationTest {
         try (TcpClient oldSpike = new TcpClient(nettyServer.getPort());
              TcpClient newSpike = new TcpClient(nettyServer.getPort())) {
 
-            assertThat(oldSpike.login("spike").getType()).isEqualTo(MessageType.LOGIN_OK);
-            assertThat(newSpike.login("spike").getType()).isEqualTo(MessageType.LOGIN_OK);
+            assertThat(oldSpike.login("spike").getType()).isEqualTo(MessageEnum.LOGIN_OK);
+            assertThat(newSpike.login("spike").getType()).isEqualTo(MessageEnum.LOGIN_OK);
 
             // 旧连接先收到 KICKED，随后被服务端关闭（readLine 读到 EOF）。
             Message kicked = oldSpike.receive();
-            assertThat(kicked.getType()).isEqualTo(MessageType.KICKED);
+            assertThat(kicked.getType()).isEqualTo(MessageEnum.KICKED);
             assertThat(oldSpike.reader.readLine()).isNull();
 
             // 新连接仍然在线，可以收到推送。
@@ -97,7 +97,7 @@ class NettyAdvancedApplicationTest {
         }
 
         Message login(String userId) throws IOException {
-            send(new Message(MessageType.LOGIN, userId, null, null));
+            send(new Message(MessageEnum.LOGIN, userId, null, null));
             return receive();
         }
 

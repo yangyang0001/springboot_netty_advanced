@@ -1,7 +1,7 @@
 package deepblue.inaction_02_springboot.controller;
 
 import deepblue.inaction_02_springboot.model.Message;
-import deepblue.inaction_02_springboot.model.MessageType;
+import deepblue.inaction_02_springboot.model.MessageEnum;
 import deepblue.inaction_02_springboot.session.ChannelSessionManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +34,7 @@ public class NettyPushController {
     @PostMapping("/push")
     public Map<String, Object> push(@RequestParam String to, @RequestParam String content) {
         log.info("NettyPushController push invoke, http push to={} content={}", to, content);
-        boolean sent = sessionManager.send(to, Message.of(MessageType.PUSH, content));
+        boolean sent = sessionManager.send(to, Message.of(MessageEnum.PUSH, content));
         log.info("NettyPushController push invoke, http push to={} sent={}", to, sent);
         return Map.of("to", to, "sent", sent);
     }
@@ -42,7 +42,7 @@ public class NettyPushController {
     @PostMapping("/broadcast")
     public Map<String, Object> broadcast(@RequestParam String content) {
         log.info("NettyPushController broadcast invoke, http broadcast content={}", content);
-        int count = sessionManager.broadcast(Message.of(MessageType.PUSH, content));
+        int count = sessionManager.broadcast(Message.of(MessageEnum.PUSH, content));
         return Map.of("sent", count);
     }
 }
