@@ -1,4 +1,4 @@
-Spring Boot + Netty 使用流程 (deepblue.inaction_02_springboot)
+﻿Spring Boot + Netty 使用流程 (deepblue.inaction_02_springboot)
 	流程图 (浏览器打开): src/main/resources/综合使用图示/Netty_9_SpringBoot案例流程.html
 	    交互时序 + 6 个场景逐个 Handler 回放 (启动建连 / LOGIN / CHAT / HTTP 推送 / 心跳与读空闲 / 踢下线)
 

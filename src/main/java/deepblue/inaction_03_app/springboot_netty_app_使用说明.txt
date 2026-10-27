@@ -1,0 +1,105 @@
+﻿桌面聊天 App 使用说明 (deepblue.inaction_03_app)
+
+一、是什么
+	- 按 inaction_02 中 springboot_netty_websocket_技术方案.txt 的路线 A 实现: Swing 桌面 App + Netty TCP 客户端,
+	  并在本包内另起一个 App 专用的 Netty 服务端, 实现在线状态实时广播。
+	- 与 inaction_02 完全独立, 不修改、也不引用 inaction_02 的任何类:
+	    · 服务端: AppNettyServer, TCP 9100 (inaction_02 的 NettyServer 仍是 9000, 两者在同一个 Spring Boot 进程中同时启动);
+	    · 自己的消息模型、编解码器、会话表、业务 Handler、线程组;
+	    · 线上协议格式不变: 一行一个 JSON, 例如 {"content":"hi","from":"tom","to":"jerry","type":"CHAT"}。
+	- 因为是两个独立的服务端, App (9100) 和 inaction_02 的终端客户端 (9000) 之间不能互聊。
+
+
+二、目录结构
+	inaction_03_app
+	├── config
+	│   └── AppServerConfig            netty.app-server.* 配置 (默认端口 9100, 不配置即用默认值)
+	├── model
+	│   ├── AppMessage                 type / from / to / content
+	│   └── AppMessageType             在 inaction_02 的基础上新增 ONLINE_LIST / USER_ONLINE / USER_OFFLINE
+	├── server
+	│   ├── AppNettyServer             App 服务端, SmartLifecycle 随 Spring 启停
+	│   └── AppServerInitializer       服务端每个连接的 Pipeline
+	├── session
+	│   └── AppSessionManager          userId ⇄ Channel; 上线 / 下线广播; 重复登录踢旧连接
+	├── handler
+	│   ├── inbound
+	│   │   ├── AppJsonDecoder         String → AppMessage (服务端和客户端共用)
+	│   │   ├── AppServerHandler       服务端业务: LOGIN (回 LOGIN_OK + ONLINE_LIST) / PING / CHAT, 读空闲踢人
+	│   │   └── AppClientHandler       客户端: 收消息交给 ClientListener; 写空闲发 PING; 被踢下线不重连
+	│   └── outbound
+	│       └── AppJsonEncoder         AppMessage → 一行 JSON (服务端和客户端共用)
+	├── client
+	│   ├── ClientListener             Netty 事件回调接口 (onConnected / onMessage / onDisconnected / onReconnecting / onKicked)
+	│   ├── NettyChatClient            与界面无关的 Netty 客户端: 连接、自动 LOGIN、send、指数退避重连、close
+	│   └── AppClientInitializer       客户端 Pipeline, 与服务端对称
+	└── ui
+	    ├── MineNettyApp               Swing 主窗口 (main 入口), 实现 ClientListener
+	    ├── ChatItem                   聊天记录中的一行 (自己 / 别人 / 系统 / 错误)
+	    └── ChatItemRenderer           聊天气泡绘制
+	测试: src/test/java/deepblue/inaction_03_app/client/NettyChatClientTest
+	测试配置: src/test/resources/config/application.properties (测试中 App 服务端用随机端口)
+	脚本: scripts/netty-app.cmd
+
+
+三、在线状态实时广播 (新增的 3 种消息)
+	ONLINE_LIST    服务端 → 刚登录的客户端   登录成功后紧跟 LOGIN_OK 下发, content 为 JSON 数组 (不含自己), 例如 ["jerry","spike"]
+	USER_ONLINE    服务端 → 其他在线客户端   有人上线, content 为上线的 userId
+	USER_OFFLINE   服务端 → 其他在线客户端   有人下线, content 为下线的 userId
+
+	- 什么时候广播 (AppSessionManager):
+	    · bind 时没有旧连接 → 新用户上线 → 广播 USER_ONLINE;
+	    · bind 时有旧连接 (重复登录) → 只踢旧连接, 这个 userId 一直在线, 不广播;
+	    · unbind 真正移除了自己 → 广播 USER_OFFLINE; 被踢的旧连接 userId 已清空, 断开时不会误报下线。
+	- 顺序保证: LOGIN_OK 和 ONLINE_LIST 在同一个业务线程、通过同一个 ctx 先后写出, 客户端一定先收到 LOGIN_OK。
+	- 并发登录时 USER_ONLINE 可能比 ONLINE_LIST 先到, 所以 App 对 ONLINE_LIST 做 "合并" 而不是 "覆盖"。
+	- 断线时 App 清空在线列表 (断线期间的状态不可信), 重连登录后由新的 ONLINE_LIST 重建。
+
+
+四、界面
+	- 左侧: 在线用户列表 (不含自己), 由服务端实时推送; 点用户名即选中聊天对象。
+	- 中间: 聊天记录, 自己的消息靠右 (蓝色气泡), 别人的靠左 (白色气泡); 上线 / 下线 / 错误提示居中。
+	- 底部: "发给" (可手动输入) + 输入框 + 发送 (回车也能发送)。
+	- 状态栏: 连接中 / 已连接, 登录中 / 已登录 / 连接已断开 / 重连中 N 秒后重试 / 已被踢下线。
+
+
+五、线程模型 (本例重点)
+	- 收消息: AppClientHandler 运行在 Netty EventLoop 线程 → ClientListener 回调也在 EventLoop 线程
+	         → MineNettyApp 用 SwingUtilities.invokeLater 切回界面线程 (EDT) 再更新界面。
+	         Swing 组件不是线程安全的, 不能在 EventLoop 线程直接操作; 回调里也不能做阻塞操作。
+	- 发消息: 点 "发送" 在 EDT 调用 NettyChatClient.send → channel.writeAndFlush
+	         → Netty 发现调用线程不是 EventLoop, 自动把写操作封装成任务交给 EventLoop, 线程安全;
+	         写完成的 Listener 在 EventLoop 线程执行 → 再 invokeLater 回 EDT 显示 "我 → jerry" 气泡。
+	         EDT 中不要 sync() / await() 等待写完成, 会卡住界面。
+	- 重连: 连接、重连、回调都在唯一的 EventLoop 线程执行, 所以 reconnectDelaySeconds 不需要加锁。
+	- 服务端: 广播由业务线程 (bizGroup) 调用 channel.writeAndFlush 写到其他人的 Channel, 同样由各自的 EventLoop 执行。
+	- 测试中断言了回调线程名以 nioEventLoopGroup 开头, 用来证明以上结论。
+
+
+六、启动与验证
+	1. 启动服务端: scripts\netty-server.cmd (或 IDEA 运行 NettyAdvancedApplication),
+	   等到 "App server started on port 9100" (同时还有 inaction_02 的 "Netty server started on port 9000")。
+	2. 启动两个 App:
+	    scripts\netty-app.cmd           不带参数, 弹出登录框 (用户名 / 服务器地址 / 端口)
+	    scripts\netty-app.cmd tom       直接以 tom 登录
+	    scripts\netty-app.cmd jerry     直接以 jerry 登录
+	    参数: [userId] [host] [port], 默认 127.0.0.1 9100
+	    IDEA 中运行: deepblue.inaction_03_app.ui.MineNettyApp, Program arguments 填 tom (多开需勾选 Allow multiple instances)。
+	    注意: 修改代码后要重新执行 scripts\netty-build.cmd (脚本在 target\lib 已存在时不会自动重新编译)。
+	3. 预期:
+	    · tom 先登录: 在线列表为空; jerry 登录后: jerry 的列表立刻出现 tom, tom 窗口出现 "jerry 上线了" 且列表出现 jerry;
+	    · tom 点 jerry, 输入 hi 回车: tom 右侧出现蓝色气泡, jerry 左侧出现白色气泡; 反之亦然;
+	    · 关闭 jerry 的窗口: tom 窗口立刻出现 "jerry 下线了", 列表移除 jerry;
+	    · 发给不在线的人: 中间出现红色 "[错误] xxx is offline";
+	    · 关闭服务端: 状态栏 "连接已断开" → "重连中, N 秒后重试", 在线列表清空; 重启服务端后自动重连并重新收到在线列表;
+	    · 同一用户名再开一个窗口: 旧窗口出现 "[被踢下线]", 状态栏 "已被踢下线, 不再重连"; 其他人不会收到这个用户的下线提示。
+	4. 自动化测试: mvn test
+	    NettyChatClientTest.onlineBroadcastAndChatBothWays           上线广播、在线列表、双向聊天、下线广播、回调线程、关闭后不重连
+	    NettyChatClientTest.duplicateLoginKicksOldClientWithoutReconnect  重复登录踢旧客户端、不重连、不误报下线
+
+
+七、已知限制
+	- App 与 inaction_02 的终端客户端连的是不同的服务端, 不能互聊。
+	- 聊天记录只在内存中, 关闭窗口即丢失; 对方不在线时消息不会保存 (无离线消息 / ACK 重发)。
+	- 没有身份认证, 任何人都可以用任意用户名登录。
+	- 手机 / 其他电脑连接本机的网络问题见 inaction_02 技术方案 六、风险 (端口换成 9100)。
