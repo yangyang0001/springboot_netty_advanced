@@ -1636,5 +1636,65 @@ Netty:
 		    ⑧ Linux 生产环境使用 Epoll。
 
 	3. Netty 使用场景是什么?
+		- 一句话: 需要 "自定义协议 / 长连接 / 高并发 / 低延迟" 的网络通信, 而 HTTP + Tomcat 不合适 (或不够用) 的地方。
+		  Netty 本身不是协议, 是一个写网络程序的框架: 把线程模型、Pipeline、ByteBuf、编解码、心跳这些通用部分做好, 业务只写 Handler。
+		- ① RPC / 中间件的通信层 (最常见, 平时用到却感觉不到):
+		    · Dubbo (dubbo 协议默认传输层)、gRPC-Java (grpc-netty)、Elasticsearch 节点间通信 (transport-netty4)、
+		      RocketMQ (remoting 模块)、Zookeeper (可选 NettyServerCnxnFactory)、Cassandra / Redisson / Lettuce 客户端。
+		    · 特点: 自定义二进制协议 (魔数 + 长度 + 序列化), 连接复用, 请求响应用 requestId 关联 (⑤ Promise)。
+		- ② Web 容器 / 网关 / 代理:
+		    · Spring WebFlux 默认容器 Reactor Netty、Spring Cloud Gateway、Zuul 2、Vert.x、Quarkus (底层 Netty)。
+		    · 特点: 少量 IO 线程扛大量连接, 全异步非阻塞; 网关是 "既当服务端又当客户端" 的典型。
+		- ③ 长连接推送 / 即时通讯:
+		    · IM 聊天、消息推送、站内通知、直播弹幕、WebSocket 服务 (WebSocketServerProtocolHandler)。
+		    · 特点: 单机几十万连接、服务端主动推送、心跳保活 + 断线重连 (⑥)、userId ⇄ Channel 会话管理。
+		- ④ 物联网 (IoT) / 硬件设备接入:
+		    · 车载终端 (JT808)、充电桩 (OCPP)、智能电表、工控设备 (Modbus TCP)、MQTT Broker。
+		    · 特点: 设备只说私有二进制协议或 TCP/UDP, 必须自己按协议文档写 Decoder / Encoder (④), 连接数大、每条消息小。
+		- ⑤ 游戏服务器: 实时对战、状态同步, TCP / UDP / KCP, 对延迟敏感, 协议多为 protobuf。
+		- ⑥ 金融 / 交易: 行情推送、FIX 协议、券商柜台接入, 要求低延迟、稳定的流量控制 (⑦)。
+		- ⑦ 自研协议的客户端 / 服务端: 文件传输 (零拷贝 FileRegion ⑧)、内网代理 / 内网穿透 (frp 类)、日志采集 Agent 上报。
+		- 不适合 (直接用 Spring MVC 即可):
+		    · 普通的 CRUD 后台、请求-响应式的 REST 接口 —— Tomcat + 线程池更简单, 生态更全;
+		    · 连接数少、对延迟不敏感的场景, 用 Netty 只会增加复杂度 (ByteBuf 泄漏、线程模型、协议设计都要自己负责)。
+		- 和 Spring Boot 结合时的分工:
+		    · Spring Boot 负责: 配置、Bean 管理 (Service / Mapper 注入到 Handler)、HTTP 管理接口、监控、生命周期;
+		    · Netty 负责: 另开一个 TCP 端口, 处理自定义协议的长连接;
+		    · 两者的桥: 会话管理器 (userId ⇄ Channel), HTTP 接口通过它把消息经 Netty 推给设备 / 客户端。
 
 	4. 给出一个结合springboot 的 netty 案例!
+		- 代码位置: deepblue.inaction_02_springboot (一个 IM / 推送服务: TCP 8 基全部落地 + HTTP 推送接口)
+		    config/NettyServerConfig          @ConfigurationProperties("netty.server"), 端口、线程数、空闲时间、帧长度、水位
+		    server/NettyServer                SmartLifecycle: 容器启动后 bind, 容器关闭时 shutdownGracefully
+		    server/NettyServerInitializer     服务端 Pipeline 组装 (有状态 Handler 每次 new, @Sharable 复用单例)
+		    handler/inbound/JsonMessageDecoder     @Sharable 单例, String → Message (fastjson)
+		    handler/inbound/ServerBusinessHandler  @Sharable 单例, 注入 Spring Bean, 处理 LOGIN / PING / CHAT, 空闲踢人, 兜底异常
+		    handler/inbound/ClientHandler          客户端 Handler: 打印消息、写空闲发心跳、断线回调重连
+		    handler/outbound/JsonMessageEncoder    @Sharable 单例, Message → 一行 JSON
+		    session/ChannelSessionManager     userId ⇄ Channel, 重复登录踢旧连接, 检查 isWritable 后再写
+		    controller/NettyPushController    GET /netty/online, POST /netty/push, POST /netty/broadcast (HTTP → TCP)
+		    client/NettyClientDemo            独立 main 客户端: 写空闲发心跳 + 指数退避重连
+		    client/NettyClientInitializer     客户端 Pipeline 组装, 与服务端对称
+		    test: deepblue.NettyAdvancedApplicationTest 启动整个容器, 用 Socket 验证聊天、心跳、HTTP 推送
+		- 协议: 一行一个 JSON (
+ 结尾), 例如 {"type":"CHAT","from":"tom","to":"jerry","content":"hi"}
+		  用行协议是为了能直接 telnet / nc 调试; 生产中二进制协议换成 LengthFieldBasedFrameDecoder + LengthFieldPrepender。
+		- Pipeline (每个连接一条):
+		    IdleStateHandler(60s 读空闲) → LineBasedFrameDecoder(8192) → StringDecoder → StringEncoder
+		    → JsonMessageDecoder → JsonMessageEncoder → [bizGroup] ServerBusinessHandler
+		- 和 Spring 结合的 5 个关键点:
+		    · 启动时机: 实现 SmartLifecycle, 而不是在 @PostConstruct 里 bind().sync().channel().closeFuture().sync()
+		      —— 后者会把 Spring 启动线程永久阻塞, 后面的 Bean 和 Tomcat 都起不来; 也不要另开线程 "裸跑", 关闭时无人回收。
+		    · Handler 与 Bean: 无状态的 Handler 加 @Sharable 做成 Spring 单例, 直接注入 Service;
+		      有状态的 (FrameDecoder、IdleStateHandler) 每个连接必须 new, 不能做成单例。
+		    · 线程: 业务 Handler 通过 addLast(bizGroup, ...) 放在 DefaultEventExecutorGroup, 查库等阻塞操作不占 IO 线程,
+		      同一个 Channel 仍然固定在同一个业务线程上, 事件顺序不变。
+		    · 跨世界调用: Controller 运行在 Tomcat 线程, 调 channel.writeAndFlush 是安全的 (Netty 转成任务交给 EventLoop)。
+		    · 关闭: stop() 中先关 serverChannel, 再依次 shutdownGracefully boss / worker / biz。
+		- 运行:
+		    1. 启动 NettyAdvancedApplication (HTTP 8080, TCP 9000);
+		    2. 启动两个 NettyClientDemo, 程序参数分别为 tom、jerry; 在 tom 的控制台输入 "jerry hello";
+		    3. curl http://localhost:8080/netty/online
+		       curl -X POST "http://localhost:8080/netty/push?to=jerry&content=hi"
+		       curl -X POST "http://localhost:8080/netty/broadcast?content=notice"
+		    4. 关掉服务端再启动, 观察客户端 1s, 2s, 4s ... 重连; 不发消息时客户端每 20s 发一次 PING。
