@@ -345,6 +345,7 @@ Netty 源码解读：netty-all 的模块、Java 包与阅读入口（Netty 4.1.1
         触发：运行 inaction_01_netty/MinePipelineObject。
         重点：入站从 Head 往 Tail 找入站 Handler，出站从 Tail 往 Head 找出站 Handler；
               ctx.write 从当前 Context 的 prev 开始找，channel.write 等于 tail.write，从 Tail 开始找。
+        设计模式（责任链、名字里的 Adapter、@Skip 跳过机制）见第十节。
 
     第二步：服务端启动与连接接入
         transport：AbstractBootstrap.bind → initAndRegister / doBind；ServerBootstrap.init；
@@ -400,7 +401,134 @@ Netty 源码解读：netty-all 的模块、Java 包与阅读入口（Netty 4.1.1
         平台：部署到 Linux 并想用原生传输时，再看 epoll 与 native-unix-common。
 
 
-十、查阅与核对方式
+十、Pipeline / Channel 中的设计模式
+
+    一句话：Pipeline 整体是"责任链"；Handler 类名里的 Adapter 指"缺省适配器"，
+    即给链上单个节点提供"默认往下传"的基类，不是 GoF 的接口转换适配器。两者分工不同，并不矛盾。
+
+    1. 责任链模式：Pipeline 的主体结构
+        结构（transport：DefaultChannelPipeline、AbstractChannelHandlerContext）：
+            HeadContext ⇄ ctx(inboundA) ⇄ ctx(outboundA) ⇄ ... ⇄ TailContext
+            每个 Handler 都包在一个 AbstractChannelHandlerContext 里，Context 之间用 prev / next 组成双向链表；
+            HeadContext / TailContext 在 Pipeline 创建时就存在，addLast 实际插在 TailContext 之前。
+        角色对应：
+            抽象处理者    ChannelHandler（ChannelInboundHandler / ChannelOutboundHandler）
+            具体处理者    JsonMessageDecoder、ServerBusinessHandler 等本项目的 Handler
+            链 / 节点     ChannelPipeline 管理链表；ChannelHandlerContext 是节点，负责找下一个节点
+            请求          事件：channelRead、channelActive、write、flush、exceptionCaught 等
+        与经典 GoF 责任链的区别：
+            - 经典版本是"找到能处理的那一个就停"；Netty 是"每个节点都可以处理，再决定要不要往下传"，
+              更接近 Servlet Filter / 拦截器链。往下传的消息可以被替换：ByteBuf → String → Message。
+            - Handler 不持有 next 引用，而是调用 ctx.fireXxx / ctx.write，由 Context 找下一个合适的节点。
+              Handler 不知道链表结构，所以同一个 @Sharable Handler 实例可以放进多条 Pipeline。
+            - 一条链表承载两个方向：入站 Head → Tail 只找入站 Handler，出站 Tail → Head 只找出站 Handler。
+            - 两端有兜底：入站事件走到 TailContext，未处理的消息打 debug 日志后 release
+              （DefaultChannelPipeline.onUnhandledInboundMessage）；
+              出站事件走到 HeadContext，交给 Channel.Unsafe 真正读写 Socket（HeadContext.write → unsafe.write）。
+        终止传播：
+            不调用 ctx.fireChannelRead(msg)，事件就停在当前节点（InboundHandlerAdapterA 的 STOP_INBOUND 模式）；
+            此时由这个 Handler 负责释放 msg，否则 ByteBuf 会泄漏。
+
+    2. 为什么叫 Adapter：缺省适配器，不是 GoF 适配器
+        GoF 的适配器模式是"把接口 A 转成接口 B"，例如 InputStreamReader 把字节流适配成字符流。
+        ChannelInboundHandlerAdapter 不转换任何接口，它用的是"缺省适配器（Default Adapter）"写法：
+            一个基类实现接口的全部方法并给出默认行为，子类只覆盖关心的方法。
+            JDK 里同样命名的例子：java.awt.event.MouseAdapter、WindowAdapter、KeyAdapter。
+        对应源码（4.1.115.Final）：
+            ChannelHandlerAdapter（抽象类，实现 ChannelHandler）
+                handlerAdded / handlerRemoved 空实现；isSharable() 读取 @Sharable 注解并按类缓存结果。
+            ChannelInboundHandlerAdapter extends ChannelHandlerAdapter implements ChannelInboundHandler
+                9 个入站事件方法，默认实现全部是"原样往后传"：
+                    @Skip
+                    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                        ctx.fireChannelRead(msg);
+                    }
+            ChannelOutboundHandlerAdapter 同理：bind / connect / write / flush 等默认调用 ctx.xxx，往 Head 方向传。
+            ChannelDuplexHandler 继承 ChannelInboundHandlerAdapter 并实现 ChannelOutboundHandler，两个方向都有默认转发。
+        为什么需要这个基类：
+            - Netty 4.1 要兼容 Java 6，接口里不能写 default 方法；没有 Adapter，
+              一个只关心 channelRead 的 Handler 也得把 9 个入站方法全写一遍。
+            - 默认实现必须是"转发"而不是"什么都不做"：空实现会让事件在这个节点悄悄断掉，后面的 Handler 收不到。
+              Adapter 正是为责任链服务的：它保证没被覆盖的事件自动沿链往下传。
+        所以：责任链描述 Pipeline 的整体结构，Adapter 是链上节点的基类写法，两者是互补关系。
+
+    3. @Skip 与 executionMask：Adapter 带来的性能优化
+        Adapter 里的转发方法都标了 @Skip（ChannelHandlerMask.Skip，包内注解，业务代码用不到）。
+        创建 Context 时，ChannelHandlerMask.mask 通过反射检查 Handler 类：
+            某个事件方法如果还是父类带 @Skip 的版本（子类没覆盖），对应的位就不置 1；
+            结果按类缓存，存入 Context 的 executionMask。
+        传播时 findContextInbound / findContextOutbound 调用 skipContext，跳过不处理该事件的 Context，
+        省掉一次"进入 Handler 再原样转发"的调用。
+        例外：Handler 是入站类型、只是没覆盖这个事件，但它的执行器和当前不同（如 addLast(bizGroup, ...)），
+              为保证事件顺序不会跳过，仍然提交到它的执行器（见 skipContext 注释，netty issue #10067）。
+        结论：继承 Adapter 后，没覆盖的方法既不用写，运行时通常也会被直接跳过。
+        本项目验证：
+            OutboundHandlerAdapterA / B 只覆盖了 write，没覆盖 flush；
+            writeAndFlush 时 write 会经过它们，flush 会被 skipContext 直接跳过，直到 HeadContext。
+            断点：AbstractChannelHandlerContext.skipContext，观察各 Context 的 executionMask。
+
+    4. 同一区域里的其它模式
+        模板方法：父类固定流程，子类只写变化的一步。
+            SimpleChannelInboundHandler.channelRead：类型匹配 → channelRead0 → finally release；
+            ByteToMessageDecoder.channelRead：累积半包、循环调用 decode、传播结果；
+            MessageToMessageDecoder / Encoder：调用 decode / encode 后释放原消息，再逐个传播结果。
+            本项目 ServerBusinessHandler、JsonMessageDecoder / JsonMessageEncoder 都是这种用法。
+        外观（门面）：
+            Channel.write / writeAndFlush 委托给 pipeline.write，再交给 tail.write；
+            调用方只面对 Channel，不需要知道链表和 Context。
+        委托到传输层：
+            HeadContext 是链与底层传输的连接点，出站事件最终交给 Channel.Unsafe；
+            同一套 Pipeline 可以跑在 NIO、Epoll、EmbeddedChannel 等不同 Channel 实现上。
+        组合：
+            CombinedChannelDuplexHandler 把一个入站 Handler 和一个出站 Handler 合成一个节点，
+            例如 HttpServerCodec = HttpRequestDecoder + HttpResponseEncoder。
+        观察者：
+            ChannelFuture / ChannelPromise 的 addListener，操作完成后由 DefaultPromise 通知 Listener。
+        一次性初始化节点：
+            ChannelInitializer 本身也是 ChannelInboundHandlerAdapter，
+            在 handlerAdded / channelRegistered 时调用 initChannel 装好真正的 Handler，然后把自己从 Pipeline 移除。
+
+    5. 汇总：设计模式与对应的类 / 接口
+        前 8 项属于 Pipeline / Handler，后 6 项属于 Channel 的创建与运行。
+        除 HttpServerCodec 在 netty-codec-http、MessageToMessage* 在 netty-codec、
+        EventExecutorChooserFactory 在 netty-common 外，其余类都在 netty-transport。
+
+        模式           接口 / 抽象角色                          具体类 / 体现位置
+        --------------------------------------------------------------------------------------------------
+        责任链         ChannelPipeline、ChannelHandlerContext、   DefaultChannelPipeline、AbstractChannelHandlerContext
+                       ChannelInboundHandler、                    （prev / next 双向链表，fireXxx / write 传播）、
+                       ChannelOutboundHandler                     HeadContext、TailContext
+        缺省适配器     ChannelHandler、ChannelInboundHandler、    ChannelHandlerAdapter、ChannelInboundHandlerAdapter、
+                       ChannelOutboundHandler                     ChannelOutboundHandlerAdapter、ChannelDuplexHandler
+        模板方法       ChannelInboundHandlerAdapter（父类流程）    SimpleChannelInboundHandler.channelRead → channelRead0；
+                                                                  ByteToMessageDecoder.channelRead → decode；
+                                                                  MessageToMessageDecoder / Encoder → decode / encode
+        外观（门面）   Channel、ChannelOutboundInvoker            AbstractChannel.write → DefaultChannelPipeline.write → tail.write
+        委托           Channel.Unsafe                             HeadContext.write / flush → unsafe.write / flush
+        组合           ChannelDuplexHandler                       CombinedChannelDuplexHandler（例：HttpServerCodec =
+                                                                  HttpRequestDecoder + HttpResponseEncoder）
+        观察者         ChannelFuture、GenericFutureListener       DefaultPromise / DefaultChannelPromise 的 addListener、notifyListeners
+        一次性初始化   ChannelInboundHandlerAdapter               ChannelInitializer（initChannel 后 remove 自己）
+        --------------------------------------------------------------------------------------------------
+        工厂           ChannelFactory                             ReflectiveChannelFactory：
+                                                                  AbstractBootstrap.channel(XxxChannel.class) 包成工厂，
+                                                                  initAndRegister 里 channelFactory.newChannel()
+        工厂方法       AbstractChannel.newUnsafe()（抽象方法）    NIO 字节通道 / 消息通道各自返回 NioByteUnsafe / NioMessageUnsafe
+        建造者         AbstractBootstrap                          ServerBootstrap / Bootstrap 的链式配置：
+                                                                  group().channel().option().childHandler()，最后 bind / connect
+        策略           EventExecutorChooserFactory、              DefaultEventExecutorChooserFactory：线程数是 2 的幂用
+                       SelectStrategy                             PowerOfTwoEventExecutorChooser，否则 GenericEventExecutorChooser；
+                                                                  DefaultSelectStrategy 决定 NioEventLoop 是 select 还是先跑任务
+        Reactor        EventLoop、EventLoopGroup                  NioEventLoop（单线程 Selector 循环）；
+                                                                  boss / worker 两组 NioEventLoopGroup 即主从 Reactor
+        单例（共享）   ChannelHandler.Sharable 注解               本项目 JsonMessageDecoder / JsonMessageEncoder 标 @Sharable，
+                                                                  一个实例放进所有连接的 Pipeline；
+                                                                  addLast 时 DefaultChannelPipeline.checkMultiplicity
+                                                                  用 isSharable() 拦截非共享 Handler 的重复添加
+        --------------------------------------------------------------------------------------------------
+
+
+十一、查阅与核对方式
 
     查看实际解析的 Netty 依赖（在项目根目录执行）：
         mvn dependency:tree "-Dincludes=io.netty:*"
