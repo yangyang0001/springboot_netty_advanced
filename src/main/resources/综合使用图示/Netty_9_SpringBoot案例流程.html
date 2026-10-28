@@ -12,6 +12,7 @@
 
         .arch{margin-top:6px}.frame{border:1.5px solid var(--line);border-radius:12px;padding:14px;background:#fbfcfe}.frame.spring{border-color:#9fc3a8;background:#f5fbf6}.frame-title{font-weight:700;color:#2f7a45;margin-bottom:12px}.frame-title span,.sub-title span{font-weight:400;color:var(--muted);font-size:13px;margin-left:6px}.arch-grid{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:14px}.sub-title{font-weight:700;font-size:14px;margin-bottom:10px}.frame.beans,.frame.netty,.frame.web{background:white}.bean,.grp,.client{border:1px solid var(--line);border-left:4px solid #9aa9ba;border-radius:8px;padding:7px 11px;margin-bottom:8px;background:#fff}.bean b,.grp b,.client b{display:block;font:600 13px Consolas,monospace}.bean small,.grp small,.client small{display:block;color:var(--muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}.bean.in{border-left-color:var(--blue)}.bean.out{border-left-color:var(--green)}.bean.biz{border-left-color:var(--purple)}.bean.sess{border-left-color:var(--orange)}.grp{border-left-color:#5b7fa8}.grp.io{border-left-color:var(--blue)}.grp.pipe{border-left-color:var(--green)}.grp.bizg{border-left-color:var(--purple)}.flow .grp{margin-bottom:0}.arrow{text-align:center;color:var(--muted);font-size:12px;padding:3px 0}.hint{font-size:12px;color:var(--muted);margin:4px 0 0}.wire{text-align:center;margin:10px 0;position:relative}.wire span{display:inline-block;background:#eef5ff;color:var(--blue);border:1px solid #b9d3f5;border-radius:999px;padding:4px 16px;font-size:13px}.clients{display:grid;grid-template-columns:1fr 1fr;gap:14px}.client{border-left-color:var(--blue);margin:0}.svgwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fbfcfe;padding:8px}.svgwrap svg{display:block;width:100%;min-width:900px;height:auto}.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin:4px 0 10px}.lg::before{content:"";display:inline-block;width:22px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle;background:currentColor}.lg.c2s{color:var(--blue)}.lg.s2c{color:var(--green)}.lg.inner{color:var(--purple)}.lg.http{color:var(--orange)}
         .chain{gap:6px}.node{min-width:0;padding:12px 2px;border-width:1.5px}.node.in{border-color:#b9d3f5}.node.out{border-color:#a9dcc9}.node.duplex{border-color:#f0c99e}.node.biz{border-color:#d3c3f2}.node.tail{border-color:#d9e3ed}.node.active{border-width:2px}.node small{font-size:9.5px;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}td:nth-child(3){white-space:nowrap}@media(max-width:900px){.arch-grid,.clients{grid-template-columns:1fr}}
+        .modes .group{font-size:12px;color:var(--muted);font-weight:700;margin:0 2px 0 6px}.modes .group:first-child{margin-left:0}.modes .brk{flex-basis:100%;height:0}.lg.thr{color:var(--orange)}.bean.ui{border-left-color:#c9a26b}.app-grid{display:grid;grid-template-columns:1fr auto 1.55fr;gap:12px;align-items:center}.app-grid .spring .arch-grid{grid-template-columns:1fr 1fr}.vwire{text-align:center;color:var(--blue);font-size:13px}.vwire span{display:inline-block;background:#eef5ff;border:1px solid #b9d3f5;border-radius:999px;padding:6px 12px;line-height:1.5}.app-sec h2{margin-top:26px}.app-sec>h2:first-of-type{margin-top:0}@media(max-width:900px){.app-grid,.app-grid .spring .arch-grid{grid-template-columns:1fr}}
     </style>
 </head>
 <body>
@@ -20,10 +21,13 @@
         <div class="eyebrow">NETTY / SPRING BOOT 案例</div>
         <h1>Spring Boot + Netty：消息在 ChannelPipeline 中怎么走</h1>
         <p class="muted">按 <code>deepblue.inaction_02_springboot</code> 当前源码整理。切换场景，逐步查看每一步经过哪个
-            Handler、跑在哪个线程、消息变成了什么样，以及对应的源码和日志。</p>
+            Handler、跑在哪个线程、消息变成了什么样，以及对应的源码和日志。后半部分补充 <code>deepblue.inaction_03_app</code>：Swing
+            桌面 App + 独立的 App 服务端（TCP 9100），重点是<b>在线状态广播</b>和<b>界面线程 ⇄ EventLoop 的切换</b>（播放器场景 ⑦–⑩）。</p>
         <p><a href="Netty_2_处理链.html">← 处理链原理</a> · <a href="Netty_2_MinePipelineObject.html">MinePipelineObject
             执行过程</a> · <a
-                href="../../java/deepblue/inaction_02_springboot/springboot_netty_使用流程.txt">使用流程说明</a></p>
+                href="../../java/deepblue/inaction_02_springboot/springboot_netty_使用流程.txt">使用流程说明</a> · <a
+                href="#app">桌面聊天 App（inaction_03_app）</a> · <a
+                href="../../java/deepblue/inaction_03_app/springboot_netty_app_使用说明.txt">App 使用说明</a></p>
     </header>
 
     <section aria-label="整体结构">
@@ -128,7 +132,7 @@
             <p id="desc"></p>
             <div class="payload">
                 <div><small>当前消息形态</small><code id="message"></code></div>
-                <div><small>会话表 ChannelSessionManager</small><code id="session"></code></div>
+                <div><small id="sessLabel">会话表 ChannelSessionManager</small><code id="session"></code></div>
             </div>
             <h2>当前执行代码</h2>
             <div id="file" class="muted mono" style="font-size:12px"></div>
@@ -137,7 +141,8 @@
         <section class="card"><h2>累计日志（与真实输出格式一致）</h2>
             <p class="muted" style="font-size:13px">格式：<code>类名 方法名 invoke, channelId ...</code>。channelId
                 每次运行都不同，这里用 <code>a1</code>（tom）、<code>b2</code>（jerry）、<code>c3</code>（新 tom）代替。心跳相关日志为
-                debug，默认不显示，图中用 <code>(debug)</code> 标出。</p>
+                debug，默认不显示，图中用 <code>(debug)</code> 标出。场景 ⑦–⑩ 的日志格式是 <code>类名 方法名 invoke, userId=..., channelId
+                    ...</code>，<code>[app tom]</code> 前缀表示打印在 tom 的 App 进程里。</p>
             <pre id="log" class="log"></pre>
         </section>
     </div>
@@ -292,10 +297,217 @@
         <details>
             <summary>想看心跳的日志怎么办？</summary>
             <p>心跳相关日志是 debug 级别。服务端启动参数加
-                <code>--logging.level.deepblue.inaction_02_springboot=DEBUG</code>。</p></details>
+                <code>--logging.level.deepblue.inaction_02_springboot=DEBUG</code>（App 部分用
+                <code>deepblue.inaction_03_app</code>）。</p></details>
+    </section>
+
+    <section id="app" class="app-sec" aria-label="inaction_03_app 桌面聊天 App">
+        <div class="eyebrow">扩展 · DEEPBLUE.INACTION_03_APP</div>
+        <h2>桌面聊天 App：Swing 界面 + Netty 客户端 + 在线状态广播</h2>
+        <p class="muted">按 <code>deepblue.inaction_03_app</code> 当前源码整理。它在同一个 Spring Boot 进程里另起一个 App 专用服务端
+            <code>AppNettyServer</code>（TCP 9100），与 inaction_02 的 NettyServer（9000）同时启动、互不引用：各自的消息类型、编解码器、会话表、业务
+            Handler 和线程组。线上协议不变，仍是一行一个 JSON；但两个服务端的会话表是分开的，所以 App 和 inaction_02 的终端客户端不能互聊。</p>
+        <div class="arch">
+            <div class="app-grid">
+                <div class="frame">
+                    <div class="sub-title">MineNettyApp 进程 <span>每个窗口一个 JVM</span></div>
+                    <div class="bean ui"><b>MineNettyApp</b><small>Swing 主窗口，实现 ClientListener；左侧在线列表、中间聊天气泡、底部"发给 + 输入框"、状态栏</small></div>
+                    <div class="bean ui"><b>ChatItem / ChatItemRenderer</b><small>自己靠右蓝色 · 别人靠左白色 · 系统居中灰色 · 错误红色</small></div>
+                    <div class="arrow">↑ invokeLater 切回 EDT　　↓ client.send（EDT 调用）</div>
+                    <div class="bean in"><b>ClientListener</b><small>onConnected / onMessage / onDisconnected / onReconnecting / onKicked<br>全部在 EventLoop 线程回调</small></div>
+                    <div class="bean"><b>NettyChatClient</b><small>NioEventLoopGroup(1)：connect → 自动 LOGIN、send、指数退避重连（1→30s）、close；与界面无关</small></div>
+                    <div class="grp pipe"><b>AppClientInitializer</b><small>idle(0, 20, 0) → frameDecoder → stringDecoder → AppJsonDecoder → stringEncoder → AppJsonEncoder → AppClientHandler</small></div>
+                </div>
+                <div class="vwire"><span>⇄ TCP :9100<br>一行一个 JSON</span></div>
+                <div class="frame spring">
+                    <div class="frame-title">Spring 容器 <span>NettyAdvancedApplication（同时还有 9000 的 NettyServer）</span></div>
+                    <div class="arch-grid">
+                        <div class="frame netty">
+                            <div class="sub-title">AppNettyServer <span>SmartLifecycle · :9100</span></div>
+                            <div class="flow">
+                                <div class="grp"><b>bossGroup</b><small>1 线程 · accept</small></div>
+                                <div class="arrow">↓</div>
+                                <div class="grp io"><b>workerGroup</b><small>CPU×2 线程 · IO、编解码</small></div>
+                                <div class="arrow">↓</div>
+                                <div class="grp pipe"><b>ChannelPipeline</b><small>AppServerInitializer，结构与 inaction_02 相同</small></div>
+                                <div class="arrow">↓</div>
+                                <div class="grp bizg"><b>bizGroup</b><small>8 线程 · AppServerHandler</small></div>
+                            </div>
+                        </div>
+                        <div class="frame beans">
+                            <div class="sub-title">Spring Bean（单例）</div>
+                            <div class="bean"><b>AppServerConfig</b><small>netty.app-server.*，不配置即用默认值（9100）</small></div>
+                            <div class="bean in"><b>AppJsonDecoder</b><small>@Sharable · 服务端与客户端共用</small></div>
+                            <div class="bean out"><b>AppJsonEncoder</b><small>@Sharable · 服务端与客户端共用</small></div>
+                            <div class="bean biz"><b>AppServerHandler</b><small>LOGIN（LOGIN_OK + ONLINE_LIST）/ PING / CHAT</small></div>
+                            <div class="bean sess"><b>AppSessionManager</b><small>userId ⇄ Channel；上线 / 下线广播；踢旧连接</small></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h2>新增的 3 种消息与广播规则</h2>
+        <div class="tablewrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>类型</th>
+                    <th>方向</th>
+                    <th>content</th>
+                    <th>什么时候发</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td>ONLINE_LIST</td>
+                    <td>服务端 → 刚登录的客户端</td>
+                    <td>JSON 数组（不含自己，按名字排序），如 <code>["jerry","spike"]</code></td>
+                    <td>AppServerHandler 处理 LOGIN 时，紧跟 LOGIN_OK 用同一个 ctx 写出</td>
+                </tr>
+                <tr>
+                    <td>USER_ONLINE</td>
+                    <td>服务端 → 其他在线客户端</td>
+                    <td>上线的 userId</td>
+                    <td>bind 时 <code>old == null</code>（真正的新用户上线）</td>
+                </tr>
+                <tr>
+                    <td>USER_OFFLINE</td>
+                    <td>服务端 → 其他在线客户端</td>
+                    <td>下线的 userId</td>
+                    <td>unbind 时 <code>channels.remove(userId, channel)</code> 真正移除了自己</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <p>重复登录时 bind 拿到旧连接（<code>old != null</code>），这个 userId 一直在线，<b>不广播 USER_ONLINE</b>；旧连接的 Attribute
+            被清空，它断开时 unbind 直接返回，<b>也不广播 USER_OFFLINE</b>。其余消息类型（LOGIN / LOGIN_OK / PING / PONG / CHAT / ERROR /
+            KICKED）与 inaction_02 相同。</p>
+
+        <h2>交互流程：tom 的界面线程 ⇄ EventLoop ⇄ 服务端 ⇄ jerry</h2>
+        <p class="muted">与上面的时序图相比，客户端拆成了两条线程：Netty 回调运行在 EventLoop，界面只能在 EDT 更新，中间靠
+            <code>SwingUtilities.invokeLater</code>；EDT 调用 <code>writeAndFlush</code> 时 Netty 自动把写操作交回 EventLoop。</p>
+        <div class="legend"><span class="lg c2s">客户端 → 服务端</span><span class="lg s2c">服务端 → 客户端</span><span
+                class="lg inner">服务端内部（跨 Channel 广播 / 转发）</span><span class="lg thr">客户端线程切换</span></div>
+        <div class="svgwrap">
+            <svg id="appSeqSvg" role="img" aria-label="桌面 App 的界面线程、EventLoop 与服务端之间的交互时序图"></svg>
+        </div>
+        <p class="muted">逐步执行见上方播放器的 ⑦–⑩：服务端 Pipeline 与场景①–⑥ 结构相同，所以入站 / 出站各压缩成一步，重点放在新增的广播和线程切换上。</p>
+
+        <h2>线程模型（本例重点）</h2>
+        <div class="tablewrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>场景</th>
+                    <th>线程路径</th>
+                    <th>为什么</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td>收消息</td>
+                    <td>EventLoop：AppClientHandler.channelRead0 → ClientListener.onMessage → <code>invokeLater</code> → EDT：showMessage</td>
+                    <td>Swing 组件不是线程安全的，只能在 EDT 操作；回调里也不能阻塞，否则卡住这条连接的读写。</td>
+                </tr>
+                <tr>
+                    <td>发消息</td>
+                    <td>EDT：send → <code>channel.writeAndFlush</code>（提交任务）→ EventLoop：编码、写 Socket → 写完成 Listener → <code>invokeLater</code> → EDT：画"我 → jerry"气泡</td>
+                    <td>writeAndFlush 在非 EventLoop 线程调用是安全的；EDT 里不要 <code>sync()</code> / <code>await()</code>，否则界面卡死。</td>
+                </tr>
+                <tr>
+                    <td>重连</td>
+                    <td>EventLoop：channelInactive → scheduleReconnect → <code>group.schedule(connect)</code> → connect Listener</td>
+                    <td>连接、重连、回调都在唯一的 EventLoop 线程，<code>reconnectDelaySeconds</code> 不需要加锁。</td>
+                </tr>
+                <tr>
+                    <td>服务端广播</td>
+                    <td>App bizGroup：bind / unbind → broadcastExcept → 每个人的 <code>channel.writeAndFlush</code> → 各自 Channel 的 EventLoop 编码写出</td>
+                    <td>与 inaction_02 的 CHAT 转发同理：channel.writeAndFlush 可在任意线程写任意 Channel。</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="muted" style="font-size:13px">NettyChatClientTest 断言了回调线程名以 <code>nioEventLoopGroup</code> 开头，用来证明"回调不在界面线程"。两个服务端在同一进程，线程名里的组序号取决于启动顺序，播放器中用
+            <code>x</code> / <code>y</code> 表示。</p>
+
+        <h2>与 inaction_02 的区别</h2>
+        <div class="tablewrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>项目</th>
+                    <th>inaction_02_springboot</th>
+                    <th>inaction_03_app</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td>服务端</td>
+                    <td>NettyServer · 9000 · bizGroup 16</td>
+                    <td>AppNettyServer · 9100 · bizGroup 8</td>
+                </tr>
+                <tr>
+                    <td>客户端</td>
+                    <td>MineNettyClient：控制台输入 JSON</td>
+                    <td>MineNettyApp（Swing）+ NettyChatClient（与界面无关，可单独测试）</td>
+                </tr>
+                <tr>
+                    <td>消息</td>
+                    <td>Message / MessageEnum</td>
+                    <td>AppMessage / AppMessageType，新增 ONLINE_LIST / USER_ONLINE / USER_OFFLINE</td>
+                </tr>
+                <tr>
+                    <td>编解码器</td>
+                    <td>服务端 Spring 单例，客户端另有一份</td>
+                    <td>AppJsonDecoder / AppJsonEncoder 服务端与客户端共用；客户端在 initChannel 里把 userId 写进 Attribute，日志能打出 userId</td>
+                </tr>
+                <tr>
+                    <td>会话表</td>
+                    <td>ChannelSessionManager：bind / unbind / send</td>
+                    <td>AppSessionManager：多了 onlineUsersExcept、broadcastExcept 和上线 / 下线广播</td>
+                </tr>
+                <tr>
+                    <td>HTTP 推送</td>
+                    <td>NettyPushController（/netty/push 等）</td>
+                    <td>无</td>
+                </tr>
+                <tr>
+                    <td>客户端事件</td>
+                    <td>ClientHandler 直接打印</td>
+                    <td>AppClientHandler 交给 ClientListener，由界面层决定怎么展示</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2>理解与排查</h2>
+        <details open>
+            <summary>为什么 App 对 ONLINE_LIST 做"合并"而不是"覆盖"？</summary>
+            <p>LOGIN_OK 和 ONLINE_LIST 是同一个业务线程、同一个 ctx 先后写出的，顺序有保证。但 USER_ONLINE 是<b>别人登录时</b>由另一个业务线程写到你的
+                Channel 上的，和你的 ONLINE_LIST 之间没有先后保证。如果 spike 恰好和你同时登录，USER_ONLINE(spike) 可能先到；此时用
+                ONLINE_LIST 覆盖列表，就可能把 spike 丢掉。所以 <code>addOnlineUser</code> 按名字有序插入、已存在则忽略。</p></details>
+        <details>
+            <summary>为什么断线时清空在线列表？</summary>
+            <p>断线期间别人上线 / 下线的广播都收不到，列表已经不可信。重连成功后会重新 LOGIN，服务端下发新的 ONLINE_LIST，列表由它重建。</p>
+        </details>
+        <details>
+            <summary>关闭窗口后为什么不会重连？被踢下线为什么也不会？</summary>
+            <p>关闭窗口：<code>client.close()</code> 先置 <code>closed = true</code>，channelInactive 照常调用 scheduleReconnect，但它发现 closed
+                直接返回。被踢下线：AppClientHandler 收到 KICKED 时记下 <code>kicked = true</code>，channelInactive 只回调 onKicked，不调用
+                onDisconnected / scheduleReconnect——否则旧窗口会以同一个 userId 重新登录，把新窗口再踢掉，无限互踢。</p></details>
+        <details>
+            <summary>改了代码，App 行为没变？</summary>
+            <p><code>scripts\netty-app.cmd</code> 在 <code>target\lib</code> 已存在时不会自动重新编译，需要先执行
+                <code>scripts\netty-build.cmd</code>。IDEA 中运行 <code>deepblue.inaction_03_app.ui.MineNettyApp</code> 则没有这个问题（多开需勾选
+                Allow multiple instances）。</p></details>
+        <details>
+            <summary>已知限制</summary>
+            <p>聊天记录只在内存中；对方不在线时消息不保存（无离线消息 / ACK 重发）；没有身份认证，任何人都可以用任意用户名登录。</p>
+        </details>
     </section>
     <footer>
-        依据：NettyServer、NettyServerInitializer、JsonMessageDecoder、JsonMessageEncoder、ServerBusinessHandler、ChannelSessionManager、NettyPushController、MineNettyClient、ClientHandler。独立
+        依据：NettyServer、NettyServerInitializer、JsonMessageDecoder、JsonMessageEncoder、ServerBusinessHandler、ChannelSessionManager、NettyPushController、MineNettyClient、ClientHandler；AppServerConfig、AppMessage、AppMessageType、AppNettyServer、AppServerInitializer、AppSessionManager、AppJsonDecoder、AppJsonEncoder、AppServerHandler、AppClientHandler、AppClientInitializer、ClientListener、NettyChatClient、MineNettyApp、ChatItem、ChatItemRenderer。独立
         HTML，无外部依赖，可直接在浏览器打开。
     </footer>
 </main>
@@ -368,12 +580,59 @@
     // KICK 场景前面用到的 inbound 只保留"切换到 bizGroup"之前的关键一步，补一个说明步骤
     sc.KICK.steps.unshift(s('新的 tom 客户端连上并发送 LOGIN','入站','MineNettyClient.java · connect','send(channel, new Message(MessageEnum.LOGIN, userId, null, null));','另一个终端又以 tom 启动客户端。新连接 c3 经历和场景①②相同的建连与入站解码（这里略过前几步），LOGIN 到达 business。',-1,[],'新 tom c3',T.io2,'Message(type=LOGIN, from=tom)','{tom → a1}','新连接 c3：Socket → Head → … → jsonDecoder',['JsonMessageDecoder decode invoke, c3 decode <- {"from":"tom","type":"LOGIN"}']));
 
-    const order=['START','LOGIN','CHAT','PUSH','HEART','KICK'];
+    // ---------- inaction_03_app：桌面聊天 App（AppNettyServer :9100） ----------
+    // 服务端 Pipeline 与 inaction_02 结构相同，入站 / 出站各压缩成一步；重点是在线广播和 EDT ⇄ EventLoop 的线程切换
+    Object.assign(T,{edt:'AWT-EventQueue-0（Swing 界面线程 EDT）',cl:'nioEventLoopGroup-2-1（App 客户端唯一的 EventLoop）',cl2edt:'nioEventLoopGroup-2-1（App EventLoop）→ invokeLater → AWT-EventQueue-0（EDT）',aio:'nioEventLoopGroup-x-1（App worker EventLoop）',aio2:'nioEventLoopGroup-x-2（App worker EventLoop）',abiz:'defaultEventExecutorGroup-y-1（App bizGroup）'});
+    const appIn=(chan,cid,uid,thr,raw,msg,session)=>s('服务端入站：Head → … → AppJsonDecoder','入站','AppJsonDecoder.java · decode','AppMessage message = JSON.parseObject(line, AppMessage.class);\nlog.info("AppJsonDecoder decode invoke, userId={}, {} decode <- {}",\n        AppSessionManager.userId(ctx.channel()), ...);   // 登录前为 "-"\nout.add(message);','Pipeline 由 AppServerInitializer 组装，结构与 inaction_02 完全相同（逐个 Handler 见场景②）。userId 从 Channel 的 Attribute 取，登录前打印 "-"。解码后跳过两个 Encoder，提交给 App 的 bizGroup。',4,[],chan,thr,'AppMessage：'+msg,session,'Socket → Head → idle → frameDecoder → stringDecoder → jsonDecoder → [跳过 Encoder] → business（App bizGroup）',['AppJsonDecoder decode invoke, userId='+uid+', '+cid+' decode <- '+raw]);
+    const appOut=(chan,cid,uid,thr,from,jsons,session,note='',extra=[])=>s((from==='ctx'?'ctx.writeAndFlush':'channel.writeAndFlush')+' 在 '+cid+' 上出站：AppJsonEncoder → … → Head','出站',from==='ctx'?'AppServerHandler.reply → AppJsonEncoder.encode':'AppSessionManager → AppJsonEncoder.encode','String json = JSON.toJSONString(msg);\nlog.info("AppJsonEncoder encode invoke, userId={}, {} encode -> {}", ...);\nout.add(json + "\\n");   // → stringEncoder → [跳过 3 个 Decoder] → idle → Head',(from==='ctx'?'从 business 向前找出站 Handler；':'从 Tail 开始、跳过 business 向前找出站 Handler；')+'调用线程是 App bizGroup，write 被封装成任务交给 '+cid+' 自己的 EventLoop 执行。'+note,6,from==='ctx'?[2,3,4]:[2,3,4,7],chan,thr,'String：'+jsons.join('\\n')+'\\n',session,(from==='ctx'?'business.ctx':'Tail → [跳过 business]')+' → jsonEncoder → stringEncoder → idle → Head → Socket',[...jsons.map(j=>'AppJsonEncoder encode invoke, userId='+uid+', '+cid+' encode -> '+j),...extra]);
+    const onMsgCode='// AppClientHandler.channelRead0（EventLoop 线程）\nlistener.onMessage(msg);\n// MineNettyApp.onMessage：不能在 EventLoop 操作 Swing，交给 EDT\nSwingUtilities.invokeLater(() -> showMessage(message));\n';
+    sc.APP_LOGIN={app:true,label:'⑦ App 登录与上线广播',desc:'tom 已在线，jerry 启动 App 登录：bind 发现是新用户 → 给 tom 广播 USER_ONLINE；jerry 收到 LOGIN_OK + ONLINE_LIST ["tom"]。',steps:[
+     s('jerry 启动 App：EDT 上创建窗口并 start','客户端','MineNettyApp.java · main','SwingUtilities.invokeLater(() -> {\n    String[] login = args.length > 0 ? fromArgs(args) : showLoginDialog();\n    MineNettyApp app = new MineNettyApp(login[0], login[1], Integer.parseInt(login[2]));\n    app.setVisible(true);\n    app.client.start();   // 只发起 connect，立即返回\n});','<code>scripts\\netty-app.cmd jerry</code> 启动第二个 App（tom 已在线）。窗口在 Swing 界面线程（EDT）创建；NettyChatClient 构造时创建只有 1 个线程的 NioEventLoopGroup。connect 是异步的，EDT 不等结果，界面不会卡住。',-1,[],'jerry（App）',T.edt,'—','{tom → a1}','MineNettyApp.main → new NettyChatClient → start → bootstrap.connect（异步）',['[app jerry] MineNettyApp main invoke, userId=jerry, client=NettyChatClient{userId=jerry, server=127.0.0.1:9100}','[app jerry] NettyChatClient start invoke, userId=jerry, client=NettyChatClient{userId=jerry, server=127.0.0.1:9100}','[app jerry] NettyChatClient connect invoke, userId=jerry, connecting to 127.0.0.1:9100']),
+     s('connect 成功：EventLoop 上回调并自动发 LOGIN','客户端','NettyChatClient.java · connect','bootstrap.connect(host, port).addListener((ChannelFuture f) -> {\n    if (f.isSuccess()) {\n        reconnectDelaySeconds = 1;        // 重连退避复位\n        channel = f.channel();\n        listener.onConnected();           // → invokeLater：状态栏 "已连接，登录中"\n        send(new AppMessage(AppMessageType.LOGIN, userId, null, null));\n    }\n});','AppClientInitializer 已组装好客户端 Pipeline（idle 写空闲 20s / frameDecoder / … / AppClientHandler），并把 userId 写进 Channel 的 Attribute，所以共用的 AppJsonEncoder 在客户端也能打出 userId。connect 的 Listener 运行在客户端 EventLoop 上。',-1,[],'jerry（App） b2',T.cl,'AppMessage(type=LOGIN, from=jerry)','{tom → a1}','connect Listener → send(LOGIN) → 客户端 Pipeline 编码 → Socket',['[app jerry] NettyChatClient connect invoke, userId=jerry, b2 connect ok, send LOGIN','[app jerry] NettyChatClient send invoke, userId=jerry, b2 >> AppMessage(type=LOGIN, from=jerry, to=null, content=null)','[app jerry] AppJsonEncoder encode invoke, userId=jerry, b2 encode -> {"from":"jerry","type":"LOGIN"}','[app jerry] AppClientHandler channelActive invoke, userId=jerry, b2 connected: /127.0.0.1:54120 -> /127.0.0.1:9100']),
+     appIn('jerry b2','b2','-',T.aio2,'{"from":"jerry","type":"LOGIN"}','AppMessage(type=LOGIN, from=jerry)','{tom → a1}'),
+     s('bind：新用户上线 → 广播 USER_ONLINE','业务','AppServerHandler.java · channelRead0 → AppSessionManager.bind','case LOGIN -> {\n    sessionManager.bind(msg.getFrom(), ctx.channel());   // 内部广播 USER_ONLINE\n    ...\n}\n// bind 内部：\nchannel.attr(USER_ID).set(userId);\nChannel old = channels.put(userId, channel);\nif (old == null) {\n    broadcastExcept(userId, AppMessage.of(AppMessageType.USER_ONLINE, userId));\n    return;\n}','jerry 之前不在线（old == null），是真正的新用户上线，给除 jerry 以外的所有在线用户广播 USER_ONLINE。broadcastExcept 对每个人调用 send：查会话表、检查 isActive / isWritable，再 channel.writeAndFlush。',7,[],'jerry b2',T.abiz,'AppMessage(type=USER_ONLINE, content=jerry)','{jerry → b2, tom → a1}','business → bind → broadcastExcept → tom 的 Channel a1',['AppServerHandler channelRead0 invoke, userId=-, b2 recv msg=AppMessage(type=LOGIN, from=jerry, to=null, content=null)','AppSessionManager bind invoke, userId=jerry, b2 bind online=2','AppSessionManager send invoke, userId=tom, a1 send: AppMessage(type=USER_ONLINE, from=server, to=null, content=jerry)','AppSessionManager broadcastExcept invoke, userId=jerry, broadcast USER_ONLINE sent=1']),
+     appOut('tom a1','a1','tom',T.abiz+' → '+T.aio,'channel',['{"content":"jerry","from":"server","type":"USER_ONLINE"}'],'{jerry → b2, tom → a1}',' 这是跨 Channel 写：在 jerry 的业务处理里写 tom 的 Channel。'),
+     s('回 LOGIN_OK，紧跟 ONLINE_LIST','业务','AppServerHandler.java · channelRead0 / reply','log.info("AppServerHandler channelRead0 invoke, userId={}, {} login ok", ...);\nreply(ctx, AppMessage.of(AppMessageType.LOGIN_OK, "welcome " + msg.getFrom()));\n// 同一个 ctx、同一个线程先后写出，客户端一定先收到 LOGIN_OK 再收到 ONLINE_LIST\nreply(ctx, AppMessage.of(AppMessageType.ONLINE_LIST,\n        JSON.toJSONString(sessionManager.onlineUsersExcept(msg.getFrom()))));   // ["tom"]','onlineUsersExcept 返回除自己以外、按名字排序的在线用户，序列化成 JSON 数组放进 content。两次 reply 在同一个业务线程、同一个 Channel 上按顺序提交，EventLoop 也按顺序执行，所以顺序有保证；但别人发给 jerry 的 USER_ONLINE 和这里没有先后保证（见下方"理解与排查"）。',7,[],'jerry b2',T.abiz,'AppMessage(type=ONLINE_LIST, content=["tom"])','{jerry → b2, tom → a1}','business → reply(LOGIN_OK) → reply(ONLINE_LIST)',['AppServerHandler channelRead0 invoke, userId=jerry, b2 login ok','AppServerHandler reply invoke, userId=jerry, b2 reply AppMessage(type=LOGIN_OK, from=server, to=null, content=welcome jerry)','AppServerHandler reply invoke, userId=jerry, b2 reply AppMessage(type=ONLINE_LIST, from=server, to=null, content=["tom"])']),
+     appOut('jerry b2','b2','jerry',T.abiz+' → '+T.aio2,'ctx',['{"content":"welcome jerry","from":"server","type":"LOGIN_OK"}','{"content":"[\\"tom\\"]","from":"server","type":"ONLINE_LIST"}'],'{jerry → b2, tom → a1}',' ONLINE_LIST 的 content 本身是 JSON 字符串，所以外层序列化后引号被转义。'),
+     s('tom 的 App 收到 USER_ONLINE：EventLoop → invokeLater','客户端','AppClientHandler.java · channelRead0 → MineNettyApp.onMessage',onMsgCode+'// PONG 直接丢弃，不进界面\nif (message.getType() == AppMessageType.PONG) { return; }','Swing 组件不是线程安全的，不能在 EventLoop 线程直接改；回调里也不能做阻塞操作，否则会卡住这条连接的读写。所以这里只做一件事：把 showMessage 投递到 EDT 的事件队列，立刻返回。',-1,[],'tom（App） a1',T.cl,'AppMessage(type=USER_ONLINE, content=jerry)','{jerry → b2, tom → a1}','Socket → 客户端 Pipeline → AppClientHandler → ClientListener.onMessage → invokeLater',['[app tom] AppClientHandler channelRead0 invoke, userId=tom, a1 << {"content":"jerry","from":"server","type":"USER_ONLINE"}']),
+     s('tom 的 EDT：列表加入 jerry，提示"jerry 上线了"','界面','MineNettyApp.java · showMessage / addOnlineUser','case USER_ONLINE -> {\n    addOnlineUser(message.getContent());   // 按名字有序插入；已存在或是自己则忽略\n    addChat(ChatItem.system(message.getContent() + " 上线了"));\n}','现在在 EDT 上，可以放心操作 Swing 组件：左侧"在线用户（1）"出现 jerry，聊天区居中出现灰色系统提示。',-1,[],'tom（App）',T.edt,'界面：在线用户 [jerry]','{jerry → b2, tom → a1}','EDT：showMessage → addOnlineUser → addChat'),
+     s('jerry 的 App：LOGIN_OK 启用发送，ONLINE_LIST 合并进列表','界面','MineNettyApp.java · showMessage','case LOGIN_OK -> {\n    setStatus("● 已登录：" + userId + ..., GREEN);\n    setSendEnabled(true);\n    addChat(ChatItem.system("登录成功：" + message.getContent()));\n}\n// 合并而不是覆盖：并发登录时 USER_ONLINE 可能比 ONLINE_LIST 先到\ncase ONLINE_LIST -> JSON.parseArray(message.getContent(), String.class).forEach(this::addOnlineUser);','两条消息依次经过 EventLoop → invokeLater → EDT。登录成功后才启用输入框和发送按钮；ONLINE_LIST 逐个合并进列表，jerry 窗口出现 tom。',-1,[],'jerry（App） b2',T.cl2edt,'界面：在线用户 [tom]','{jerry → b2, tom → a1}','EventLoop → invokeLater → EDT：showMessage(LOGIN_OK) → showMessage(ONLINE_LIST)',['[app jerry] AppClientHandler channelRead0 invoke, userId=jerry, b2 << {"content":"welcome jerry","from":"server","type":"LOGIN_OK"}','[app jerry] AppClientHandler channelRead0 invoke, userId=jerry, b2 << {"content":"[\\"tom\\"]","from":"server","type":"ONLINE_LIST"}']),
+    ]};
+    sc.APP_CHAT={app:true,label:'⑧ App 发消息（EDT ⇄ EventLoop）',desc:'tom 点选 jerry、输入 hi 回车：EDT 调 writeAndFlush → EventLoop 编码写出 → 写完成再回 EDT 画气泡；服务端照常转发到 jerry。',steps:[
+     s('tom 回车：EDT 调用 client.send','界面','MineNettyApp.java · send → NettyChatClient.send','String to = targetField.getText().trim();      // 点左侧 jerry 自动填入\nString content = inputField.getText().trim();\nChannelFuture future = client.send(new AppMessage(AppMessageType.CHAT, userId, to, content));\nif (future == null) { addChat(ChatItem.error("未连接，消息没有发出")); return; }\ninputField.setText("");\n// NettyChatClient.send 内部：\nChannelFuture future = ch.writeAndFlush(message);   // 在 EDT 调用，立即返回','send 在 EDT 执行。writeAndFlush 发现当前线程不是这个 Channel 的 EventLoop，就把写操作封装成任务放进 EventLoop 的任务队列，立即返回一个未完成的 Future。EDT 里绝不能 <code>future.sync()</code>，否则界面会卡住。',-1,[],'tom（App） a1',T.edt,'AppMessage(type=CHAT, from=tom, to=jerry, content=hi)','{jerry → b2, tom → a1}','EDT：send → client.send → channel.writeAndFlush → 提交任务给 EventLoop',['[app tom] NettyChatClient send invoke, userId=tom, a1 >> AppMessage(type=CHAT, from=tom, to=jerry, content=hi)']),
+     s('客户端 EventLoop 执行写任务：编码并写出','客户端','AppJsonEncoder.java · encode（客户端 Pipeline）','String json = JSON.toJSONString(msg);\nout.add(json + "\\n");\n// → StringEncoder → idle（写完成后刷新写时间）→ Head → Socket','EventLoop 取出写任务，在客户端 Pipeline 上出站：AppJsonEncoder → StringEncoder → IdleStateHandler → Head。客户端和服务端共用同一套 AppJsonDecoder / AppJsonEncoder。业务消息写出也会重置 20s 写空闲计时，聊天活跃时不会额外发 PING。',-1,[],'tom（App） a1',T.cl,'String：{"content":"hi","from":"tom","to":"jerry","type":"CHAT"}\\n','{jerry → b2, tom → a1}','客户端 Tail → AppJsonEncoder → StringEncoder → idle → Head → Socket',['[app tom] AppJsonEncoder encode invoke, userId=tom, a1 encode -> {"content":"hi","from":"tom","to":"jerry","type":"CHAT"}']),
+     s('写完成 Listener → invokeLater → 右侧蓝色气泡','界面','MineNettyApp.java · send（Listener）','future.addListener(f -> SwingUtilities.invokeLater(() -> {\n    if (f.isSuccess()) {\n        addChat(ChatItem.mine(to, content));   // 右侧蓝色气泡 "我 → jerry"\n    } else {\n        addChat(ChatItem.error("发送失败：" + f.cause()));\n    }\n}));','写完成的 Listener 在 EventLoop 线程执行，再 invokeLater 回 EDT 画气泡。isSuccess 只表示数据已写进本机 Socket，不代表 jerry 已收到；jerry 不在线时，稍后会收到服务端的 ERROR。',-1,[],'tom（App） a1',T.cl2edt,'界面：我 → jerry  hi','{jerry → b2, tom → a1}','Future 完成（EventLoop）→ invokeLater → EDT：addChat(mine)'),
+     appIn('tom a1','a1','tom',T.aio,'{"content":"hi","from":"tom","to":"jerry","type":"CHAT"}','AppMessage(type=CHAT, from=tom, to=jerry, content=hi)','{jerry → b2, tom → a1}'),
+     s('business 处理 CHAT：查会话表找到 jerry','业务','AppServerHandler.java · channelRead0 → AppSessionManager.send','case CHAT -> {\n    if (userId == null) { reply(ctx, AppMessage.of(AppMessageType.ERROR, "login first")); return; }\n    msg.setFrom(userId);                        // 以登录身份为准\n    if (!sessionManager.send(msg.getTo(), msg)) {\n        reply(ctx, AppMessage.of(AppMessageType.ERROR, msg.getTo() + " is offline"));\n    }\n}','与 inaction_02 相同：from 以服务端登录身份覆盖；send 查会话表拿到 jerry 的 Channel b2，检查 isActive / isWritable 后 channel.writeAndFlush。对方不在线时回 ERROR，App 显示红色"[错误] xxx is offline"。',7,[],'tom a1 → jerry b2',T.abiz,'AppMessage(type=CHAT, from=tom, to=jerry, content=hi)','{jerry → b2, tom → a1}','tom.business → sessionManager.send → jerry 的 Channel b2',['AppServerHandler channelRead0 invoke, userId=tom, a1 recv msg=AppMessage(type=CHAT, from=tom, to=jerry, content=hi)','AppServerHandler channelRead0 invoke, userId=tom, a1 chat -> jerry: hi','AppSessionManager send invoke, userId=jerry, b2 send: AppMessage(type=CHAT, from=tom, to=jerry, content=hi)']),
+     appOut('jerry b2','b2','jerry',T.abiz+' → '+T.aio2,'channel',['{"content":"hi","from":"tom","to":"jerry","type":"CHAT"}'],'{jerry → b2, tom → a1}'),
+     s('jerry 的 App：EventLoop → invokeLater → 左侧白色气泡','界面','AppClientHandler.java · channelRead0 → MineNettyApp.showMessage',onMsgCode+'// EDT：\ncase CHAT -> addChat(ChatItem.other(message.getFrom(), message.getContent()));   // "tom → 我"','jerry 窗口左侧出现白色气泡。反方向（jerry → tom）完全对称。',-1,[],'jerry（App） b2',T.cl2edt,'界面：tom → 我  hi','{jerry → b2, tom → a1}','Socket → 客户端 Pipeline → AppClientHandler → invokeLater → EDT',['[app jerry] AppClientHandler channelRead0 invoke, userId=jerry, b2 << {"content":"hi","from":"tom","to":"jerry","type":"CHAT"}']),
+    ]};
+    sc.APP_OFFLINE={app:true,label:'⑨ App 下线广播与断线重连',desc:'jerry 关闭窗口 → 服务端 unbind → 给 tom 广播 USER_OFFLINE；之后服务端重启，tom 走指数退避重连并重新拿到在线列表。',steps:[
+     s('jerry 关闭窗口：client.close()','界面','MineNettyApp.java · windowClosing → NettyChatClient.close','public void windowClosing(WindowEvent e) {\n    client.close();\n}\n// NettyChatClient.close：\nclosed = true;                                    // 之后 scheduleReconnect 直接返回\nchannel.close();\ngroup.shutdownGracefully(0, 2, TimeUnit.SECONDS);  // EventLoop 线程退出，JVM 才能结束','先置 closed = true 再关连接。随后客户端 AppClientHandler.channelInactive 照常回调 onDisconnected 并调用 scheduleReconnect，但因为 closed 为 true 直接返回，不会重连。',-1,[],'jerry（App） b2','AWT-EventQueue-0（EDT）→ nioEventLoopGroup-2-1（App EventLoop）','—','{jerry → b2, tom → a1}','EDT：windowClosing → close → channel.close → EventLoop：channelInactive',['[app jerry] NettyChatClient close invoke, userId=jerry, closing','[app jerry] AppClientHandler channelInactive invoke, userId=jerry, b2 disconnected']),
+     s('服务端 channelInactive → unbind → 广播 USER_OFFLINE','业务','AppServerHandler.java · channelInactive → AppSessionManager.unbind','sessionManager.unbind(ctx.channel());\n// unbind 内部：\nString userId = channel.attr(USER_ID).get();          // jerry\nboolean removed = channels.remove(userId, channel);  // 只移除自己\nif (removed) {\n    broadcastExcept(userId, AppMessage.of(AppMessageType.USER_OFFLINE, userId));\n}','连接关闭事件沿入站方向到 business（App bizGroup）。remove(key, value) 真正移除了自己，才广播 USER_OFFLINE；被踢的旧连接 userId 已被清空，不会走到这里（见场景⑩）。',7,[5,6],'jerry b2',T.abiz,'AppMessage(type=USER_OFFLINE, content=jerry)','{tom → a1}','Head → … → business.channelInactive → unbind → broadcastExcept → a1',['AppServerHandler channelInactive invoke, userId=jerry, b2 disconnected: /127.0.0.1:54120','AppSessionManager unbind invoke, userId=jerry, b2 unbind removed=true online=1','AppSessionManager send invoke, userId=tom, a1 send: AppMessage(type=USER_OFFLINE, from=server, to=null, content=jerry)','AppSessionManager broadcastExcept invoke, userId=jerry, broadcast USER_OFFLINE sent=1']),
+     appOut('tom a1','a1','tom',T.abiz+' → '+T.aio,'channel',['{"content":"jerry","from":"server","type":"USER_OFFLINE"}'],'{tom → a1}'),
+     s('tom 的 App：列表移除 jerry，提示"jerry 下线了"','界面','MineNettyApp.java · showMessage',onMsgCode+'// EDT：\ncase USER_OFFLINE -> {\n    onlineModel.removeElement(message.getContent());\n    updateOnlineTitle();\n    addChat(ChatItem.system(message.getContent() + " 下线了"));\n}','tom 窗口"在线用户（0）"，聊天区居中出现灰色提示。',-1,[],'tom（App） a1',T.cl2edt,'界面：在线用户 []','{tom → a1}','EventLoop → invokeLater → EDT：showMessage(USER_OFFLINE)',['[app tom] AppClientHandler channelRead0 invoke, userId=tom, a1 << {"content":"jerry","from":"server","type":"USER_OFFLINE"}']),
+     s('服务端停止：tom 普通断线，清空列表并开始重连','断开','AppClientHandler.java · channelInactive → MineNettyApp.onDisconnected','// AppClientHandler（EventLoop）\nif (kicked) { listener.onKicked(); return; }\nlistener.onDisconnected();\nonDisconnected.run();           // = NettyChatClient::scheduleReconnect\n\n// MineNettyApp.onDisconnected → invokeLater：\nsetStatus("● 连接已断开", RED);\nsetSendEnabled(false);\nonlineModel.clear();            // 断线期间的在线状态不可信\naddChat(ChatItem.error("与服务器的连接断开了"));','另一种下线：服务端停止（Spring 关闭 → AppNettyServer.stop）。tom 不是被踢，走普通断线：清空在线列表、禁用发送，并安排重连。',-1,[],'tom（App） a1',T.cl2edt,'—','{}','服务端关闭 → 客户端 channelInactive → onDisconnected（EDT）+ scheduleReconnect',['AppNettyServer stop invoke, userId=-, App server stopping','[app tom] AppClientHandler channelInactive invoke, userId=tom, a1 disconnected','[app tom] NettyChatClient scheduleReconnect invoke, userId=tom, reconnect in 1s','AppNettyServer stop invoke, userId=-, App server stopped']),
+     s('指数退避重连：1s、2s、4s … 最多 30s','重连','NettyChatClient.java · scheduleReconnect','if (closed || group.isShuttingDown()) { return; }\nint delay = reconnectDelaySeconds;\nreconnectDelaySeconds = Math.min(reconnectDelaySeconds * 2, MAX_RECONNECT_DELAY_SECONDS);\nlistener.onReconnecting(delay);    // → invokeLater：状态栏 "重连中，N 秒后重试 ..."\ngroup.schedule(this::connect, delay, TimeUnit.SECONDS);','connect 失败的 Listener 再次调用 scheduleReconnect。connect、它的 Listener、schedule 的定时任务都跑在这唯一的 EventLoop 线程上，所以 reconnectDelaySeconds 是普通 int，不需要加锁或 volatile。',-1,[],'tom（App）',T.cl,'—','{}','schedule(connect) → 失败 → scheduleReconnect → schedule(connect) …',['[app tom] NettyChatClient connect invoke, userId=tom, connecting to 127.0.0.1:9100','[app tom] NettyChatClient connect invoke, userId=tom, connect to 127.0.0.1:9100 failed: io.netty.channel.AbstractChannel$AnnotatedConnectException: Connection refused: ...','[app tom] NettyChatClient scheduleReconnect invoke, userId=tom, reconnect in 2s','[app tom] ...（4s、8s、16s、30s、30s …）']),
+     s('服务端重启：重连成功，重新登录并重建在线列表','重连','NettyChatClient.java · connect','if (f.isSuccess()) {\n    reconnectDelaySeconds = 1;     // 退避复位\n    channel = f.channel();         // 新 Channel\n    listener.onConnected();\n    send(new AppMessage(AppMessageType.LOGIN, userId, null, null));\n}','新连接 channelId 不同（这里用 e5）。服务端 bind 时 old == null，广播 USER_ONLINE（没有其他人在线，sent=0），回 LOGIN_OK + ONLINE_LIST，App 按新列表重建在线用户。',-1,[],'tom（App） e5',T.cl,'AppMessage(type=LOGIN, from=tom)','{tom → e5}','connect 成功 → LOGIN → LOGIN_OK + ONLINE_LIST []',['AppNettyServer start invoke, userId=-, App server started on port 9100','[app tom] NettyChatClient connect invoke, userId=tom, e5 connect ok, send LOGIN','AppSessionManager bind invoke, userId=tom, e5 bind online=1','AppSessionManager broadcastExcept invoke, userId=tom, broadcast USER_ONLINE sent=0','[app tom] AppClientHandler channelRead0 invoke, userId=tom, e5 << {"content":"welcome tom","from":"server","type":"LOGIN_OK"}','[app tom] AppClientHandler channelRead0 invoke, userId=tom, e5 << {"content":"[]","from":"server","type":"ONLINE_LIST"}']),
+    ]};
+    sc.APP_KICK={app:true,label:'⑩ App 重复登录（不广播）',desc:'另一个窗口又以 tom 登录：踢掉旧连接 a1，但 tom 一直在线，所以既不广播 USER_ONLINE，也不广播 USER_OFFLINE；jerry 看不到任何变化。',steps:[
+     appIn('新 tom c3','c3','-',T.aio,'{"from":"tom","type":"LOGIN"}','AppMessage(type=LOGIN, from=tom)','{jerry → b2, tom → a1}'),
+     s('bind 发现旧连接：只踢人，不广播','业务','AppSessionManager.java · bind','channel.attr(USER_ID).set(userId);\nChannel old = channels.put(userId, channel);   // tom → c3，拿到旧的 a1\nif (old == null) { ... USER_ONLINE ...; return; }   // 不会走到这里\nif (old != channel) {\n    old.attr(USER_ID).set(null);               // 旧连接断开时 unbind 直接返回\n    old.writeAndFlush(AppMessage.of(AppMessageType.KICKED, userId + " logged in elsewhere"))\n            .addListener((ChannelFuture f) -> f.channel().close());\n}','old != null：tom 一直在线，只是换了连接，所以<b>不广播 USER_ONLINE</b>。旧连接 a1 的 Attribute 先清空，再在 a1 上写 KICKED，写完关闭。之后 business 照常给新连接回 LOGIN_OK + ONLINE_LIST ["jerry"]。',7,[],'新 tom c3 → 旧 tom a1',T.abiz,'AppMessage(type=KICKED)','{jerry → b2, tom → c3}','c3.business → bind → a1.writeAndFlush(KICKED)；reply(LOGIN_OK, ONLINE_LIST)',['AppServerHandler channelRead0 invoke, userId=-, c3 recv msg=AppMessage(type=LOGIN, from=tom, to=null, content=null)','AppSessionManager bind invoke, userId=tom, c3 bind online=2','AppSessionManager bind invoke, userId=tom, a1 kick old channel, new channel=c3','AppServerHandler channelRead0 invoke, userId=tom, c3 login ok','AppServerHandler reply invoke, userId=tom, c3 reply AppMessage(type=LOGIN_OK, from=server, to=null, content=welcome tom)','AppServerHandler reply invoke, userId=tom, c3 reply AppMessage(type=ONLINE_LIST, from=server, to=null, content=["jerry"])']),
+     appOut('旧 tom a1','a1','-',T.abiz+' → '+T.aio,'channel',['{"content":"tom logged in elsewhere","from":"server","type":"KICKED"}'],'{jerry → b2, tom → c3}',' 注意编码日志里 userId=-：a1 的 Attribute 在写之前已被清空。写完成的 Listener 随即关闭 a1。',['AppSessionManager bind invoke, userId=tom, a1 kicked notice written=true, close']),
+     s('旧连接 channelInactive：unbind 直接返回，不广播下线','断开','AppServerHandler.java · channelInactive → AppSessionManager.unbind','String userId = channel.attr(USER_ID).get();   // null（bind 时已清空）\nif (userId == null) {\n    return;            // 不 remove，也不广播 USER_OFFLINE\n}','两道保险：bind 时已清空 a1 的 Attribute，unbind 直接返回；即使没清空，<code>channels.remove("tom", a1)</code> 也会返回 false（会话表里已是 c3），同样不会广播。jerry 看不到"tom 下线了"，会话表保持 tom → c3。',7,[5,6],'旧 tom a1',T.abiz,'—','{jerry → b2, tom → c3}','Head → … → business.channelInactive → unbind（userId 为空，直接返回）',['AppServerHandler channelInactive invoke, userId=-, a1 disconnected: /127.0.0.1:53842']),
+     s('旧窗口：显示被踢，不再重连','界面','AppClientHandler.java · channelRead0 / channelInactive','// channelRead0（EventLoop）\nif (msg.getType() == AppMessageType.KICKED) { kicked = true; }\nlistener.onMessage(msg);          // EDT：红色 "[被踢下线] tom logged in elsewhere"\n// channelInactive（EventLoop）\nif (kicked) {\n    listener.onKicked();           // EDT：状态栏 "已被踢下线，不再重连"，禁用发送\n    return;                        // 不调用 onDisconnected / scheduleReconnect\n}','AppClientHandler 每个连接 new 一个，kicked 只属于这条连接。如果旧窗口照常重连，会以 tom 再次登录、把新窗口踢掉，两边无限互踢。',-1,[],'旧 tom（App） a1',T.cl2edt,'AppMessage(type=KICKED)','{jerry → b2, tom → c3}','<< KICKED → kicked = true → 连接关闭 → onKicked（不重连）',['[app tom 旧] AppClientHandler channelRead0 invoke, userId=tom, a1 << {"content":"tom logged in elsewhere","from":"server","type":"KICKED"}','[app tom 旧] AppClientHandler channelInactive invoke, userId=tom, a1 kicked offline, will not reconnect']),
+     s('新窗口：登录成功，在线列表为 [jerry]','界面','MineNettyApp.java · showMessage','case LOGIN_OK -> { setStatus(...); setSendEnabled(true); ... }\ncase ONLINE_LIST -> JSON.parseArray(message.getContent(), String.class).forEach(this::addOnlineUser);','新窗口正常登录。jerry 的窗口没有收到任何 USER_ONLINE / USER_OFFLINE，之后发给 tom 的消息会到新窗口。',-1,[],'新 tom（App） c3',T.cl2edt,'界面：在线用户 [jerry]','{jerry → b2, tom → c3}','EventLoop → invokeLater → EDT',['[app tom 新] AppClientHandler channelRead0 invoke, userId=tom, c3 << {"content":"welcome tom","from":"server","type":"LOGIN_OK"}','[app tom 新] AppClientHandler channelRead0 invoke, userId=tom, c3 << {"content":"[\\"jerry\\"]","from":"server","type":"ONLINE_LIST"}']),
+    ]};
+
+    const order=['START','LOGIN','CHAT','PUSH','HEART','KICK','APP_LOGIN','APP_CHAT','APP_OFFLINE','APP_KICK'];
+    const groupStart={START:'inaction_02',APP_LOGIN:'inaction_03_app'};
+    const appLabels={4:'AppJsonDecoder',6:'AppJsonEncoder',7:'AppServerHandler'};
     let mode='START',index=0,timer=null;
-    order.forEach(k=>{const b=document.createElement('button');b.dataset.mode=k;b.textContent=sc[k].label;b.onclick=()=>{pause();mode=k;index=0;render();};$('modes').append(b);});
+    order.forEach(k=>{if(groupStart[k]){if(k!=="START"){const br=document.createElement("div");br.className="brk";$("modes").append(br);}const g=document.createElement('span');g.className='group';g.textContent=groupStart[k]+'：';$('modes').append(g);}const b=document.createElement('button');b.dataset.mode=k;b.textContent=sc[k].label;b.onclick=()=>{pause();mode=k;index=0;render();};$('modes').append(b);});
     nodes.forEach(([name,label,type],i)=>{const n=document.createElement('div');n.id='node'+i;const t=document.createElement('strong');t.textContent=name;const sub=document.createElement('small');sub.textContent=label;const tag=document.createElement('span');tag.className='tag';tag.textContent=tagText[type];n.append(t,sub,tag);$('chain').append(n);});
     function pause(){if(timer!==null)clearInterval(timer);timer=null;$('play').textContent='▶ 自动播放';}
-    function render(){const steps=sc[mode].steps,st=steps[index];$('modeDesc').textContent=sc[mode].desc;$('progress').textContent=`步骤 ${index+1} / ${steps.length}`;$('bar').style.width=((index+1)/steps.length*100)+'%';$('bp').textContent=st.bp;$('stepTitle').textContent=st.title;$('desc').innerHTML=st.desc;$('message').textContent=st.message;$('session').textContent=st.session;$('file').textContent=st.file;$('code').textContent=st.code;$('route').textContent=st.route;$('chan').textContent=st.chan;$('thread').textContent=st.thread;$('log').textContent=steps.slice(0,index+1).flatMap(x=>x.logs).join('\n');$('prev').disabled=index===0;$('next').disabled=index===steps.length-1;nodes.forEach(([, ,type],i)=>{$('node'+i).className='node '+type+(st.skip.includes(i)?' skip':'')+(i===st.node?' active':'');});document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));$('timeline').replaceChildren();steps.forEach((x,i)=>{const b=document.createElement('button');b.textContent=(i+1)+' · '+x.bp;b.title=x.title;b.setAttribute('aria-pressed',String(i===index));b.onclick=()=>{pause();index=i;render();};$('timeline').append(b);});}
+    function render(){const steps=sc[mode].steps,st=steps[index];$('modeDesc').textContent=sc[mode].desc;$('progress').textContent=`步骤 ${index+1} / ${steps.length}`;$('bar').style.width=((index+1)/steps.length*100)+'%';$('bp').textContent=st.bp;$('stepTitle').textContent=st.title;$('desc').innerHTML=st.desc;$('message').textContent=st.message;$('session').textContent=st.session;$('file').textContent=st.file;$('code').textContent=st.code;$('route').textContent=st.route;$('chan').textContent=st.chan;$('thread').textContent=st.thread;$('log').textContent=steps.slice(0,index+1).flatMap(x=>x.logs).join('\n');$('prev').disabled=index===0;$('next').disabled=index===steps.length-1;const isApp=!!sc[mode].app;$('sessLabel').textContent=isApp?'会话表 AppSessionManager':'会话表 ChannelSessionManager';nodes.forEach(([,label,type],i)=>{const n=$('node'+i);n.className='node '+type+(st.skip.includes(i)?' skip':'')+(i===st.node?' active':'');n.querySelector('small').textContent=(isApp&&appLabels[i])||label;});document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mode===mode)));$('timeline').replaceChildren();steps.forEach((x,i)=>{const b=document.createElement('button');b.textContent=(i+1)+' · '+x.bp;b.title=x.title;b.setAttribute('aria-pressed',String(i===index));b.onclick=()=>{pause();index=i;render();};$('timeline').append(b);});}
     function move(d){index=Math.max(0,Math.min(sc[mode].steps.length-1,index+d));if(index===sc[mode].steps.length-1)pause();render();}
     function play(){if(timer!==null){pause();return;}if(index===sc[mode].steps.length-1)index=0;render();$('play').textContent='⏸ 暂停';timer=setInterval(()=>move(1),Number($('speed').value));}
     $('prev').onclick=()=>{pause();move(-1);};$('next').onclick=()=>{pause();move(1);};$('restart').onclick=()=>{pause();index=0;render();};$('play').onclick=play;$('speed').onchange=()=>{if(timer!==null){pause();play();}};
@@ -402,12 +661,10 @@
      for(let k=0;k<outPath.length-1;k++){const a=cx(outPath[k])-14,b=cx(outPath[k+1])+14,jump=outPath[k]-outPath[k+1]>1,h=jump?44:30;el('path',{d:`M${a},${by+bh+2} C${a},${by+bh+h} ${b},${by+bh+h} ${b},${by+bh+2}`,fill:'none',stroke:C.out,'stroke-width':2,'marker-end':'url(#arr-pipeSvg-out)'},svg);if(jump)el('text',{x:(a+b)/2,y:by+bh+h+2,'text-anchor':'middle','font-size':12,fill:C.out},svg,'跳过 3 个 Decoder');}
      el('text',{x:W-x0,y:H-12,'text-anchor':'end','font-size':14,'font-weight':700,fill:C.out},svg,'出站 write：business（或 Tail）→ … → Head → Socket');
     }
-    function drawSequence(){
-     const svg=$('seqSvg'),W=1300;
-     // late: 在第 7 段才创建的参与者（新 tom 终端、它在服务端的 Channel c3），头部画在出现的位置
-     const lanes={A2:{x:80,t:'终端 A′',s:'新 tom',late:true},A:{x:240,t:'终端 A',s:'MineNettyClient · tom'},a1:{x:480,t:'服务端 Channel a1',s:'tom 的 Pipeline'},c3:{x:660,t:'服务端 Channel c3',s:'新 tom 的 Pipeline',late:true},b2:{x:860,t:'服务端 Channel b2',s:'jerry 的 Pipeline'},B:{x:1080,t:'终端 B',s:'MineNettyClient · jerry'},H:{x:1230,t:'curl',s:'HTTP :8080'}};
-     const color={c2s:C.in,s2c:C.out,inner:C.biz,http:C.http};
-     const rows=[
+    const seqColor={c2s:C.in,s2c:C.out,inner:C.biz,http:C.http,thr:C.http};
+    // late: 在第 7 段才创建的参与者（新 tom 终端、它在服务端的 Channel c3），头部画在出现的位置
+    const seqLanes={A2:{x:80,t:'终端 A′',s:'新 tom',late:true},A:{x:240,t:'终端 A',s:'MineNettyClient · tom'},a1:{x:480,t:'服务端 Channel a1',s:'tom 的 Pipeline'},c3:{x:660,t:'服务端 Channel c3',s:'新 tom 的 Pipeline',late:true},b2:{x:860,t:'服务端 Channel b2',s:'jerry 的 Pipeline'},B:{x:1080,t:'终端 B',s:'MineNettyClient · jerry'},H:{x:1230,t:'curl',s:'HTTP :8080',w:96}};
+    const seqRows=[
       ['phase','1  建连 + 登录（连接成功后客户端自动发 LOGIN）'],
       ['msg','A','a1','c2s','connect + LOGIN','{"from":"tom","type":"LOGIN"}'],
       ['note','a1','bind(tom → a1)'],
@@ -448,16 +705,55 @@
       ['msg','c3','A2','s2c','LOGIN_OK','ctx.writeAndFlush',true],
       ['note','A2','新 tom 在线，会话表 tom → c3'],
      ];
+    // inaction_03_app：客户端拆成界面线程（EDT）和 EventLoop 两条线
+    const appLanes={tE:{x:90,t:'tom 界面线程',s:'EDT · MineNettyApp',w:150},tL:{x:290,t:'tom EventLoop',s:'NettyChatClient'},a1:{x:530,t:'服务端 Channel a1',s:'tom 的 Pipeline'},b2:{x:780,t:'服务端 Channel b2',s:'jerry 的 Pipeline'},jL:{x:1020,t:'jerry EventLoop',s:'NettyChatClient'},jE:{x:1215,t:'jerry 界面线程',s:'EDT · MineNettyApp',w:150}};
+    const appRows=[
+      ['phase','1  tom 登录（此时没有其他人在线）'],
+      ['msg','tE','tL','thr','client.start()','connect 是异步的，EDT 立即返回'],
+      ['msg','tL','a1','c2s','connect + LOGIN','{"from":"tom","type":"LOGIN"}'],
+      ['note','a1','bind(tom → a1)：old == null → 广播 USER_ONLINE（无人在线，sent=0）'],
+      ['msg','a1','tL','s2c','LOGIN_OK → ONLINE_LIST []','同一个 ctx 先后写出',true],
+      ['msg','tL','tE','thr','invokeLater','"已登录"，列表为空'],
+      ['phase','2  jerry 登录 → 上线广播'],
+      ['msg','jL','b2','c2s','connect + LOGIN','{"from":"jerry","type":"LOGIN"}'],
+      ['note','b2','bind(jerry → b2)：old == null'],
+      ['msg','b2','a1','inner','broadcastExcept(USER_ONLINE)','App bizGroup → a1.writeAndFlush'],
+      ['msg','a1','tL','s2c','USER_ONLINE jerry',''],
+      ['msg','tL','tE','thr','invokeLater','列表 + jerry，"jerry 上线了"'],
+      ['msg','b2','jL','s2c','LOGIN_OK → ONLINE_LIST ["tom"]','ctx.writeAndFlush ×2',true],
+      ['msg','jL','jE','thr','invokeLater','合并进列表：tom'],
+      ['phase','3  tom 发 hi（EDT → EventLoop → EDT）'],
+      ['msg','tE','tL','thr','writeAndFlush','非 EventLoop 线程 → 封装成任务'],
+      ['msg','tL','a1','c2s','CHAT','AppJsonEncoder 在 EventLoop 上编码'],
+      ['msg','tL','tE','thr','写完成 → invokeLater','右侧蓝色气泡',true],
+      ['msg','a1','b2','inner','sessionManager.send(jerry)','a1 入站解码 → business → 找到 b2'],
+      ['msg','b2','jL','s2c','CHAT',''],
+      ['msg','jL','jE','thr','invokeLater','左侧白色气泡 "tom → 我"'],
+      ['phase','4  jerry 关闭窗口 → 下线广播'],
+      ['msg','jE','jL','thr','client.close()','closed = true，不再重连'],
+      ['msg','jL','b2','c2s','连接关闭','服务端 channelInactive'],
+      ['note','b2','unbind：remove(jerry, b2) = true → 广播 USER_OFFLINE'],
+      ['msg','b2','a1','inner','broadcastExcept(USER_OFFLINE)',''],
+      ['msg','a1','tL','s2c','USER_OFFLINE jerry',''],
+      ['msg','tL','tE','thr','invokeLater','列表移除 jerry，"jerry 下线了"'],
+      ['phase','5  服务端重启 → 断线重连'],
+      ['note','tL','channelInactive → scheduleReconnect：1s, 2s, 4s … ≤ 30s'],
+      ['msg','tL','tE','thr','invokeLater','"连接已断开"，清空列表'],
+      ['msg','tL','a1','c2s','reconnect + LOGIN','新 Channel，退避复位为 1s'],
+      ['msg','a1','tL','s2c','LOGIN_OK → ONLINE_LIST','App 按新列表重建',true],
+    ];
+    function drawSequence(svgId,W,lanes,rows){
+     const svg=$(svgId),color=seqColor;
      markers(svg,color);
      const lifeG=el('g',{},svg),body=el('g',{},svg),head=el('g',{},svg);
-     const box=(l,top)=>{const bw=l.t==='curl'?96:150;el('rect',{x:l.x-bw/2,y:top,width:bw,height:50,rx:9,fill:'white',stroke:l.late?'#c9a26b':'#9fb3c8','stroke-width':1.4},head);el('text',{x:l.x,y:top+21,'text-anchor':'middle','font-size':14,'font-weight':700,fill:C.ink},head,l.t);el('text',{x:l.x,y:top+39,'text-anchor':'middle','font-size':11.5,fill:C.muted},head,l.s);};
+     const box=(l,top)=>{const bw=l.w||150;el('rect',{x:l.x-bw/2,y:top,width:bw,height:50,rx:9,fill:'white',stroke:l.late?'#c9a26b':'#9fb3c8','stroke-width':1.4},head);el('text',{x:l.x,y:top+21,'text-anchor':'middle','font-size':14,'font-weight':700,fill:C.ink},head,l.t);el('text',{x:l.x,y:top+39,'text-anchor':'middle','font-size':11.5,fill:C.muted},head,l.s);};
      let y=96;
      for(const r of rows){
       if(r[0]==='phase'){y+=8;el('rect',{x:12,y:y-17,width:W-24,height:26,rx:6,fill:'#eef3f9'},body);el('text',{x:24,y:y+1,'font-size':13.5,'font-weight':700,fill:C.ink},body,r[1]);y+=34;continue;}
       if(r[0]==='create'){for(const k of r.slice(1)){lanes[k].top=y-6;box(lanes[k],y-6);}y+=66;continue;}
       if(r[0]==='note'){const l=lanes[r[1]],t=el('text',{y:y+4,'font-size':12,'font-family':'Consolas,monospace',fill:C.ink},body,r[2]);const w=t.getBBox().width;let x=l.x-w/2;x=Math.max(20,Math.min(W-20-w,x));t.setAttribute('x',x);const rect=el('rect',{x:x-8,y:y-12,width:w+16,height:23,rx:5,fill:'#fffbe8',stroke:'#e6d48a'});body.insertBefore(rect,t);y+=42;continue;}
       const [,f,to,kind,label,sub,dashed]=r,x1=lanes[f].x,x2=lanes[to].x,dir=x2>x1?1:-1;
-      el('line',{x1:x1+dir*4,y1:y,x2:x2-dir*4,y2:y,stroke:color[kind],'stroke-width':2,'stroke-dasharray':dashed?'6 4':'none','marker-end':`url(#arr-seqSvg-${kind})`},body);
+      el('line',{x1:x1+dir*4,y1:y,x2:x2-dir*4,y2:y,stroke:color[kind],'stroke-width':2,'stroke-dasharray':dashed?'6 4':'none','marker-end':`url(#arr-${svgId}-${kind})`},body);
       const mid=(x1+x2)/2;
       el('text',{x:mid,y:y-8,'text-anchor':'middle','font-size':13,'font-weight':600,fill:color[kind]},body,label);
       if(sub){el('text',{x:mid,y:y+17,'text-anchor':'middle','font-size':11.5,fill:C.muted,'font-family':sub.startsWith('{')?'Consolas,monospace':'inherit'},body,sub);y+=14;}
@@ -466,7 +762,7 @@
      const H=y+10;svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
      for(const l of Object.values(lanes)){const top=l.late?l.top:10;el('line',{x1:l.x,y1:top+52,x2:l.x,y2:H-6,stroke:'#c3cfdc','stroke-width':1.5,'stroke-dasharray':'4 5'},lifeG);if(!l.late)box(l,10);}
     }
-    drawPipeline();drawSequence();
+    drawPipeline();drawSequence('seqSvg',1300,seqLanes,seqRows);drawSequence('appSeqSvg',1300,appLanes,appRows);
     render();
 </script>
 </body>

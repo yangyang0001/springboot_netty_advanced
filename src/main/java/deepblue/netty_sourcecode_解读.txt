@@ -1,0 +1,418 @@
+Netty 源码解读：netty-all 的模块、Java 包与阅读入口（Netty 4.1.115.Final）
+
+    本文固定以 4.1.115.Final 为准：模块划分、类名、方法名都按这个版本核对，阅读源码也请用同一版本。
+
+
+一、本项目引入的是什么
+
+    <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-all</artifactId>
+    </dependency>
+
+    1. 版本来源
+        pom.xml 继承 Spring Boot 3.2.12，没有单独写 Netty 版本；
+        spring-boot-dependencies-3.2.12 管理 netty.version = 4.1.115.Final。
+
+    2. netty-all 是"聚合入口"，不是实现包
+        netty-all-4.1.115.Final.jar 里只有 META-INF（9 个文件），没有任何 .class；
+        它的 POM 以 compile 范围引入 27 个模块，再以 runtime 范围引入各平台的原生库：
+            epoll  ×3（linux-x86_64 / linux-aarch_64 / linux-riscv64）
+            kqueue ×2（osx-x86_64 / osx-aarch_64）
+            macOS DNS ×2（osx-x86_64 / osx-aarch_64）
+        所以在 IDE 里跳转源码时，进入的是 netty-transport、netty-codec 等子模块的 sources.jar。
+
+    3. 三个容易混淆的概念
+        Maven 模块：netty-common、netty-transport 等独立构件，对应源码仓库的 common、transport 等目录。
+        Java 包：io.netty.util、io.netty.channel 等命名空间。模块和包不是一一对应：
+            netty-transport 同时包含 io.netty.bootstrap 和 io.netty.channel.*；
+            io.netty.handler.* 分散在 netty-handler、netty-codec 及各协议模块中。
+        netty-bom：只统一各构件的版本，不提供实现，导入 BOM 也不会自动引入模块。
+                   本项目由 Spring Boot 管理版本，不需要再导 netty-bom。
+
+    4. 本项目真正用到的只有 5 个模块
+        统计 src/main/java 中全部 import io.netty 语句（第八节逐一列出）：
+            netty-transport  Channel、Pipeline、Bootstrap、EventLoop 等，用得最多；
+            netty-codec      LineBasedFrameDecoder、StringDecoder / StringEncoder、MessageToMessage*；
+            netty-handler    IdleStateHandler、IdleStateEvent；
+            netty-common     AttributeKey、DefaultEventExecutorGroup；
+            netty-buffer     没有直接 import，但 Socket 读写、StringDecoder / Encoder 处理的都是 ByteBuf。
+        其余 20 多个模块是 netty-all 一起带进来的，读本项目时可以先不看。
+
+    本地核对依据（本机 Maven 仓库为 D:/Repository）：
+        D:/Repository/org/springframework/boot/spring-boot-dependencies/3.2.12/spring-boot-dependencies-3.2.12.pom
+        D:/Repository/io/netty/netty-all/4.1.115.Final/netty-all-4.1.115.Final.pom
+        D:/Repository/io/netty/netty-all/4.1.115.Final/netty-all-4.1.115.Final.jar
+
+
+二、模块总览：先决定读什么
+
+    优先级：★★★ 本项目直接使用，必读；★★ 被间接使用或理解原理需要；★ 按需；— 平台相关或已弃用。
+
+    模块                                  主要 Java 包                         本项目   优先级
+    ------------------------------------------------------------------------------------------
+    netty-common                          io.netty.util(.concurrent)           直接     ★★★
+    netty-buffer                          io.netty.buffer                      间接     ★★
+    netty-transport                       io.netty.bootstrap / channel.*       直接     ★★★
+    netty-codec                           io.netty.handler.codec(.*)           直接     ★★★
+    netty-handler                         io.netty.handler.timeout / ssl 等    直接     ★★★
+    netty-resolver                        io.netty.resolver                    间接     ★
+    netty-resolver-dns                    io.netty.resolver.dns                —        ★
+    netty-codec-http / http2 / mqtt 等     io.netty.handler.codec.xxx           —        ★
+    netty-handler-proxy / ssl-ocsp        io.netty.handler.proxy / ssl.ocsp    —        ★
+    netty-transport-*-epoll / kqueue      io.netty.channel.epoll / kqueue      —        —
+    netty-transport-native-unix-common    io.netty.channel.unix                —        —
+    netty-resolver-dns-*-macos            io.netty.resolver.dns.macos          —        —
+    netty-transport-rxtx / udt            io.netty.channel.rxtx / udt          —        — 已弃用
+    netty-transport-sctp                  io.netty.channel.sctp                —        —
+    ------------------------------------------------------------------------------------------
+    netty-resolver 标"间接"：客户端 Bootstrap.connect(host, port) 解析地址时会用到默认解析器。
+
+
+三、职责分层与一次 TCP 请求
+
+    职责分层示意（不是 Maven 依赖图）：
+
+        应用业务 Handler：登录、聊天、推送              ← 本项目自己写
+                  |
+        协议编解码：netty-codec、netty-codec-http 等     ← 本项目用 netty-codec 的行分隔 + 字符串
+                  |
+        通用处理器：netty-handler（TLS、空闲检测、日志、流控）
+                  |
+        网络传输：netty-transport（启动、Channel、EventLoop、Pipeline）
+                  |
+        字节容器：netty-buffer（ByteBuf、分配器、内存池）
+                  |
+        基础设施：netty-common（Future、Promise、执行器、引用计数）
+
+        旁路：netty-resolver(-dns) 负责地址解析；epoll / kqueue 原生库补充特定平台的传输实现。
+
+    以本项目服务端收到一行 JSON 为例：
+        NioEventLoop 发现 Socket 可读 → NioSocketChannel 读到 ByteBuf
+        → IdleStateHandler 记录读时间
+        → LineBasedFrameDecoder 按 \n 切出一帧 → StringDecoder 转 String → JsonMessageDecoder 转 Message
+        → 业务 Handler（在 DefaultEventExecutorGroup 线程执行）
+        → JsonMessageEncoder 转一行 JSON → StringEncoder 转 ByteBuf
+        → HeadContext 写入 ChannelOutboundBuffer，flush 后写到 Socket。
+    分层图表示"谁依赖谁"，执行顺序由 Pipeline 中 Handler 的实际位置决定。
+
+
+四、核心模块详解
+
+    1. netty-common：公共基础设施
+        主要包：
+            io.netty.util                  引用计数、AttributeKey、HashedWheelTimer、Recycler 等。
+            io.netty.util.concurrent       Future、Promise、EventExecutor、执行器组。
+            io.netty.util.collection       以基本类型为键的集合（IntObjectHashMap 等）。
+            io.netty.util.internal         平台检测、底层工具，属于内部实现。
+            io.netty.util.internal.logging 内部日志适配（自动对接 SLF4J 等）。
+        代表类：
+            ReferenceCounted、ReferenceCountUtil、AttributeKey、HashedWheelTimer；
+            FastThreadLocal、Recycler、ResourceLeakDetector；
+            Future、Promise、DefaultPromise、SingleThreadEventExecutor、DefaultEventExecutorGroup。
+        解决的问题：整个框架共用的异步结果、任务调度与资源管理。
+        本项目：AttributeKey 在 Channel 上绑定 userId；DefaultEventExecutorGroup 作为 bizGroup 执行业务 Handler。
+        注意：这里的 Future 是 io.netty.util.concurrent.Future（继承 JDK Future 并增加 Listener）；
+              业务代码不要依赖 internal 包。
+
+    2. netty-buffer：字节数据与内存管理
+        主要包：io.netty.buffer、io.netty.buffer.search。
+        代表类：ByteBuf、AbstractByteBuf、ByteBufAllocator、PooledByteBufAllocator、
+                UnpooledByteBufAllocator、CompositeByteBuf、Unpooled、ByteBufUtil。
+        解决的问题：网络消息的读写、堆内 / 直接内存分配、池化、组合缓冲区和字节搜索。
+        关键点：
+            readerIndex / writerIndex 分开维护，读写不用像 JDK ByteBuffer 那样 flip；
+            slice / duplicate 共享底层存储，copy 复制数据；retainedSlice 共享存储并增加引用计数；
+            引用计数归零才回收，retain / release 必须与所有权匹配。
+        本项目：StringDecoder 继承 MessageToMessageDecoder<ByteBuf>，decode 后由父类释放 ByteBuf，
+                所以业务代码拿到的已经是 String / Message，不需要手动 release。
+        注意：用了内存池也必须释放；Netty 的"零拷贝"多指 CompositeByteBuf、slice 等避免 JVM 内复制，
+              与操作系统层面的 sendfile 零拷贝（FileRegion）不是一回事。
+
+    3. netty-transport：网络通信与事件驱动的骨架
+        主要包：
+            io.netty.bootstrap          Bootstrap / ServerBootstrap，组装客户端和服务端启动配置。
+            io.netty.channel            Channel、ChannelPipeline、ChannelHandler、ChannelHandlerContext、EventLoop。
+            io.netty.channel.nio        基于 JDK Selector 的 NioEventLoop / NioEventLoopGroup。
+            io.netty.channel.socket     TCP / UDP 的接口与配置（SocketChannel 等）。
+            io.netty.channel.socket.nio NioServerSocketChannel、NioSocketChannel、NioDatagramChannel。
+            io.netty.channel.embedded   EmbeddedChannel：不走真实网络，直接驱动 Pipeline，适合测试 Handler。
+            io.netty.channel.local      同一 JVM 内通信的 LocalChannel / LocalServerChannel。
+            io.netty.channel.group      ChannelGroup：批量写入、批量关闭多个连接。
+            io.netty.channel.pool       ChannelPool、FixedChannelPool 等客户端连接池。
+            io.netty.channel.oio 等     旧式阻塞 IO 实现，已弃用。
+        代表类：
+            ServerBootstrap、Bootstrap；
+            AbstractChannel、NioServerSocketChannel、NioSocketChannel；
+            NioEventLoopGroup、NioEventLoop；
+            DefaultChannelPipeline、AbstractChannelHandlerContext、ChannelInitializer；
+            ChannelFuture、ChannelPromise、ChannelOutboundBuffer、WriteBufferWaterMark。
+        解决的问题：启动监听、接入连接、注册 IO、事件分发、读写与关闭。
+        本项目：NettyServer / AppNettyServer 的 bossGroup、workerGroup、bind、childHandler；
+                NettyChatClient 的 Bootstrap.connect；所有 Handler 与 Pipeline。
+        注意：一个 EventLoop 管理多个 Channel，一个 Channel 终身绑定一个 EventLoop；
+              不要在 EventLoop 线程里执行阻塞业务（本项目用 bizGroup 隔离）。
+
+    4. netty-codec：通用编解码与消息边界
+        主要包：io.netty.handler.codec 及 string、bytes、base64、compression、json、
+                protobuf、marshalling、serialization、xml 等子包。
+        代表类：
+            ByteToMessageDecoder、MessageToByteEncoder；
+            MessageToMessageDecoder、MessageToMessageEncoder；
+            LineBasedFrameDecoder、DelimiterBasedFrameDecoder、FixedLengthFrameDecoder；
+            LengthFieldBasedFrameDecoder、LengthFieldPrepender；
+            StringDecoder、StringEncoder、JsonObjectDecoder。
+        解决的问题：TCP 是字节流，一次 read 不一定是一条完整消息；
+                    ByteToMessageDecoder 负责累积字节、切出完整帧，MessageToMessage* 负责类型转换。
+        本项目：入站 LineBasedFrameDecoder → StringDecoder → JsonMessageDecoder；
+                出站 JsonMessageEncoder → StringEncoder。
+        注意：JsonObjectDecoder 只识别 JSON 对象 / 数组的边界，不反序列化成 POJO；
+              本项目 String ⇄ Message 由自定义 Handler 调用 fastjson 完成。
+              protobuf、marshalling 等子包需要对应的第三方库，netty-all 不会帮你引入。
+
+    5. netty-handler：可复用的通用处理器
+        主要包：
+            io.netty.handler.timeout    IdleStateHandler、ReadTimeoutHandler、WriteTimeoutHandler。
+            io.netty.handler.ssl        SslContext、SslHandler 等 TLS 支持（含 ssl.util 辅助工具）。
+            io.netty.handler.logging    LoggingHandler，打印连接和读写事件，调试很方便。
+            io.netty.handler.traffic    按 Channel 或全局做流量整形、统计。
+            io.netty.handler.flow       FlowControlHandler，控制消息向后传播的节奏。
+            io.netty.handler.flush      FlushConsolidationHandler，合并频繁的 flush。
+            io.netty.handler.stream     ChunkedWriteHandler，分块发送大文件 / 大数据流。
+            io.netty.handler.ipfilter   按远端地址规则过滤连接。
+            io.netty.handler.address    动态替换本地 / 远端地址。
+            io.netty.handler.pcap       把流量写成 pcap 文件，辅助抓包分析。
+        本项目：服务端 IdleStateHandler(60, 0, 0) 检测读空闲，客户端 IdleStateHandler(0, 20, 0) 检测写空闲。
+        注意：IdleStateHandler 只发出 IdleStateEvent，发 PING 还是关连接由业务 Handler 在 userEventTriggered 里决定；
+              TLS 默认用 JDK 引擎，想用 OpenSSL 引擎需另加 netty-tcnative 依赖。
+
+    6. netty-resolver：地址解析抽象
+        主要包：io.netty.resolver。
+        代表类：AddressResolverGroup、DefaultAddressResolverGroup、DefaultNameResolver、InetSocketAddressResolver。
+        解决的问题：把主机名转换成连接需要的 InetSocketAddress。
+        注意：接口返回 Future，但默认实现 DefaultNameResolver 内部调用 JDK InetAddress，解析本身是阻塞的。
+
+    7. netty-resolver-dns：Netty 实现的异步 DNS
+        主要包：io.netty.resolver.dns。
+        代表类：DnsNameResolver、DnsNameResolverBuilder、DnsAddressResolverGroup。
+        解决的问题：直接发 DNS 查询，支持缓存、DNS 服务器选择等，底层使用 netty-codec-dns。
+        注意：需要显式调用 Bootstrap.resolver(new DnsAddressResolverGroup(...)) 才会生效，引入模块不会自动切换。
+
+
+五、协议模块：按应用协议选择
+
+    以下模块都由 netty-all 引入；表中只列职责和常用入口。
+
+    模块                   主要 Java 包（前缀 io.netty.handler.codec.）与职责
+    --------------------------------------------------------------------------------
+    netty-codec-dns        dns：DNS 查询 / 响应消息和记录的编解码。
+                          入口：DnsQuery、DnsResponse、DatagramDnsQueryEncoder。
+    netty-codec-haproxy    haproxy：解析 / 生成 PROXY protocol 头，在代理后拿到真实客户端地址。
+                          入口：HAProxyMessageDecoder、HAProxyMessageEncoder。
+    netty-codec-http       http：HTTP/1.x 请求响应、聚合、压缩、Cookie、multipart、CORS；
+                          另含 http.websocketx（WebSocket）和 rtsp。
+                          入口：HttpServerCodec、HttpClientCodec、HttpObjectAggregator、
+                                WebSocketServerProtocolHandler。
+    netty-codec-http2      http2：HTTP/2 帧、流、多路复用、HPACK 与流量控制。
+                          入口：Http2FrameCodecBuilder、Http2MultiplexHandler。
+    netty-codec-memcache   memcache(.binary)：Memcached 二进制协议。
+                          入口：BinaryMemcacheClientCodec、BinaryMemcacheObjectAggregator。
+    netty-codec-mqtt       mqtt：MQTT 消息的编解码与消息对象。
+                          入口：MqttDecoder、MqttEncoder。
+    netty-codec-redis      redis：Redis RESP 消息的编解码与聚合。
+                          入口：RedisDecoder、RedisEncoder、RedisArrayAggregator。
+    netty-codec-smtp       smtp：SMTP 命令与响应。
+                          入口：SmtpRequestEncoder、SmtpResponseDecoder。
+    netty-codec-socks      socks / socksx：SOCKS4 / SOCKS5 代理协议消息。
+                          入口：Socks5InitialRequestDecoder、Socks5ClientEncoder。
+    netty-codec-stomp      stomp：STOMP 帧，常用于消息代理通信。
+                          入口：StompSubframeDecoder、StompSubframeEncoder。
+    netty-codec-xml        xml：基于 Aalto 的异步 XML 解析，输出 XML 事件。
+                          入口：XmlDecoder；需要另加 Aalto 依赖。
+    --------------------------------------------------------------------------------
+
+    易混点：
+        - XmlFrameDecoder 在 netty-codec 的 xml 子包，只切分 XML 帧；netty-codec-xml 才做事件解析。
+        - netty-codec-http 提供 HTTP / WebSocket 协议能力，不是 Spring MVC 那样的 Web 框架。
+        - netty-codec-mqtt 只处理 MQTT 协议格式，订阅、持久化等 Broker 逻辑要自己写。
+        - 本项目是"TCP + 换行分隔 JSON"，没有用 HTTP / WebSocket 编解码器；
+          NettyPushController 的 HTTP 接口由 Spring Boot 内嵌 Tomcat 提供，与 Netty 无关。
+        - 改成 WebSocket 只需替换 Pipeline 中"分帧"那一段：
+          HttpServerCodec → HttpObjectAggregator → WebSocketServerProtocolHandler → 文本帧转 String，
+          后面的 JSON 编解码、业务 Handler、会话表都可以照用。
+
+
+六、其它 Handler 扩展模块
+
+    1. netty-handler-proxy
+        包：io.netty.handler.proxy。
+        入口：HttpProxyHandler、Socks4ProxyHandler、Socks5ProxyHandler。
+        用途：客户端经 HTTP CONNECT / SOCKS 代理连到目标服务。
+        与 netty-codec-haproxy 的区别：前者负责"通过代理建立连接"，后者负责"读写 PROXY protocol 头"。
+
+    2. netty-handler-ssl-ocsp
+        包：io.netty.handler.ssl.ocsp。
+        入口：OcspClient、OcspServerCertificateValidator。
+        用途：主动查询 OCSP，校验服务端证书是否被吊销。
+        注意：netty-handler 中也有同名包 io.netty.handler.ssl.ocsp，跳转源码时看清楚类在哪个构件里。
+
+
+七、传输与平台相关模块
+
+    1. netty-transport-classes-epoll / netty-transport-native-epoll
+        包：io.netty.channel.epoll。
+        入口：EpollEventLoopGroup、EpollServerSocketChannel、EpollSocketChannel。
+        classes 是 Java 部分，native 是 .so 原生库（linux-x86_64 / aarch_64 / riscv64）。
+        使用时 EventLoopGroup 和 Channel 必须一起换成 Epoll 实现。
+
+    2. netty-transport-classes-kqueue / netty-transport-native-kqueue
+        包：io.netty.channel.kqueue。
+        入口：KQueueEventLoopGroup、KQueueServerSocketChannel、KQueueSocketChannel。
+        macOS / BSD 的 kqueue 传输；原生库为 osx-x86_64 / osx-aarch_64。
+
+    3. netty-transport-native-unix-common
+        包：io.netty.channel.unix。
+        入口：FileDescriptor、Socket、DomainSocketAddress。
+        epoll / kqueue 共用的文件描述符、Socket 与 JNI 基础设施，本身不是 EventLoop 实现。
+
+    4. netty-resolver-dns-classes-macos / netty-resolver-dns-native-macos
+        包：io.netty.resolver.dns.macos。
+        入口：MacOSDnsServerAddressStreamProvider。
+        只负责读取 macOS 系统的 DNS 服务器配置，DNS 查询本身仍由 netty-resolver-dns 完成。
+
+    5. netty-transport-sctp
+        包：io.netty.channel.sctp、sctp.nio、sctp.oio。入口：SctpChannel、NioSctpChannel。
+        SCTP 传输，依赖操作系统支持（Windows 上不可用）。
+
+    6. netty-transport-rxtx / netty-transport-udt（均已弃用）
+        rxtx：RxtxChannel，基于 RXTX 库的串口通信；
+        udt：NioUdtProvider，基于 UDT 库的传输。两者都需要额外的外部库，新代码不要使用。
+
+    本项目在 Windows 上使用 NioEventLoopGroup + NioServerSocketChannel：
+        依赖树里出现 epoll / kqueue 原生库，只是 netty-all 一起带进来，当前进程并没有使用它们；
+        Linux 上可用 Epoll.isAvailable() 判断后切换，macOS 上对应 KQueue.isAvailable()。
+        不同 classifier（linux-x86_64 等）是同一模块针对不同平台的构建产物，不是不同功能。
+
+
+八、对应到当前项目的代码
+
+    1. inaction_01_netty：Pipeline 传播原理
+        MinePipelineObject
+            EmbeddedChannel（transport.embedded）：不启动网络，直接 writeInbound / writeOutbound 驱动 Pipeline。
+        handler/inbound/*、handler/outbound/*
+            ChannelInboundHandlerAdapter / ChannelOutboundHandlerAdapter、ChannelPromise（transport）。
+
+    2. inaction_02_springboot：Spring Boot 中的服务端与终端客户端
+        server/NettyServer
+            ServerBootstrap、NioEventLoopGroup、NioServerSocketChannel、ChannelOption、WriteBufferWaterMark（transport）；
+            DefaultEventExecutorGroup / EventExecutorGroup（common）。
+        server/NettyServerInitializer、client/NettyClientInitializer
+            ChannelInitializer、ChannelPipeline、SocketChannel（transport）；
+            LineBasedFrameDecoder、StringDecoder、StringEncoder（codec）；
+            IdleStateHandler（handler）。
+        handler/inbound/JsonMessageDecoder、handler/outbound/JsonMessageEncoder
+            继承 MessageToMessageDecoder / MessageToMessageEncoder（codec），@Sharable 单例。
+        handler/inbound/ServerBusinessHandler、ClientHandler
+            SimpleChannelInboundHandler（transport）；IdleStateEvent / IdleState（handler）。
+        session/ChannelSessionManager
+            Channel、ChannelFuture（transport）；AttributeKey（common）。
+        client/MineNettyClient
+            Bootstrap、NioSocketChannel（transport）。
+
+    3. inaction_03_app：桌面 App 与独立服务端（9100）
+        server/AppNettyServer、server/AppServerInitializer
+            与 inaction_02 相同的模块组合，另起一套线程组。
+        session/AppSessionManager
+            在 Channel / AttributeKey 之上增加上线 / 下线广播。
+        client/NettyChatClient
+            Bootstrap + NioEventLoopGroup(1)；group.schedule 做指数退避重连（common 的定时任务）。
+        client/AppClientInitializer、handler/inbound/AppClientHandler
+            客户端 Pipeline 与写空闲心跳；回调运行在 EventLoop 线程，界面层再切回 Swing EDT。
+
+    以上全部只用到 common、buffer（间接）、transport、codec、handler 五个模块，
+    理解本项目不需要先读协议模块和平台原生模块。
+
+
+九、源码阅读顺序与断点入口
+
+    原则：先读接口与骨架，再沿一次真实的 IO 路径走，最后才看内存池与平台实现。
+    以下是关键类 / 方法的导航，省略了异步调度和中间调用，不是完整的同步调用栈。
+    每一步都给出"用本项目怎么触发"，在 IDE 里打断点、对照日志看最有效。
+
+    第一步：Channel / Pipeline / Context / Handler 的关系
+        transport：DefaultChannelPipeline（addLast、HeadContext、TailContext）；
+                   AbstractChannelHandlerContext（fireChannelRead、write、findContextInbound / findContextOutbound）。
+        触发：运行 inaction_01_netty/MinePipelineObject。
+        重点：入站从 Head 往 Tail 找入站 Handler，出站从 Tail 往 Head 找出站 Handler；
+              ctx.write 从当前 Context 的 prev 开始找，channel.write 等于 tail.write，从 Tail 开始找。
+
+    第二步：服务端启动与连接接入
+        transport：AbstractBootstrap.bind → initAndRegister / doBind；ServerBootstrap.init；
+                   AbstractChannel.AbstractUnsafe.register；
+                   NioEventLoop.run → processSelectedKeys；
+                   AbstractNioMessageChannel.NioMessageUnsafe.read → NioServerSocketChannel.doReadMessages；
+                   ServerBootstrap.ServerBootstrapAcceptor.channelRead；
+                   ChannelInitializer.initChannel（组装完成后把自己从 Pipeline 移除）。
+        触发：启动 NettyAdvancedApplication，再用 scripts\netty-client.cmd 或 MineNettyApp 连上。
+        重点：监听 Channel（NioServerSocketChannel）在 boss 上只做 accept；
+              accept 得到的 NioSocketChannel 注册到 worker 中的某个 EventLoop，之后终身绑定。
+
+    第三步：任务与线程模型
+        common：SingleThreadEventExecutor.execute / runAllTasks、AbstractScheduledEventExecutor.schedule、DefaultPromise。
+        transport：MultithreadEventLoopGroup（线程数传 0 时取 DEFAULT_EVENT_LOOP_THREADS，默认 CPU 核数 × 2）；
+                   SingleThreadEventLoop、NioEventLoop、NioEventLoopGroup；
+                   AbstractChannelHandlerContext.write（非 EventLoop 线程调用时封装成 WriteTask 提交）。
+        触发：在 App 窗口点"发送"（Swing EDT 调用 writeAndFlush），或通过 HTTP 推送（Tomcat 线程写 Channel）。
+        重点：IO 事件、普通任务、定时任务在同一个 EventLoop 线程里轮流执行；
+              addLast(bizGroup, ...) 后，该 Handler 的事件由 bizGroup 中固定的一个执行器处理，顺序不乱。
+
+    第四步：读事件与解码
+        transport：AbstractNioByteChannel.NioByteUnsafe.read（分配 ByteBuf、读 Socket、fireChannelRead）。
+        codec：ByteToMessageDecoder.channelRead → callDecode（累积半包）；
+               LineBasedFrameDecoder.decode；MessageToMessageDecoder.channelRead（解码后释放原消息）。
+        触发：客户端发一条 CHAT，断点打在 LineBasedFrameDecoder.decode。
+        重点：本项目路径 ByteBuf → 一行 ByteBuf → String → Message → 业务 Handler；
+              TCP 的一次 read 与一条业务消息没有固定对应关系。
+
+    第五步：写事件、水位与异步结果
+        transport：AbstractChannelHandlerContext.write；HeadContext.write / flush；
+                   AbstractChannel.AbstractUnsafe.write / flush / flush0；
+                   ChannelOutboundBuffer（addMessage、addFlush、高低水位与 isWritable）；
+                   NioSocketChannel.doWrite。
+        common：DefaultPromise 完成后通知 Listener。
+        触发：CHAT 转发时断点打在 ChannelSessionManager.send 的 writeAndFlush，跟到 HeadContext。
+        重点：write 只入队，flush 才真正写；写不完时注册 OP_WRITE，等可写后继续；
+              超过高水位 isWritable 变为 false，但 Netty 不会替你拒绝写入，本项目在 send 里自己判断；
+              ChannelFuture 成功只表示写进了本机 Socket，对方是否处理成功需要业务层 ACK。
+
+    第六步：内存与引用计数
+        buffer：AbstractByteBuf、AbstractReferenceCountedByteBuf；
+                PooledByteBufAllocator、PoolArena、PoolChunk、PoolThreadCache。
+        common：ReferenceCounted、ReferenceCountUtil、ResourceLeakDetector。
+        触发：启动参数加 -Dio.netty.leakDetection.level=paranoid，观察是否有泄漏告警。
+        重点：谁拥有 ByteBuf、谁负责释放、跨线程传递时是否需要 retain；
+              SimpleChannelInboundHandler 默认在 channelRead0 之后自动 release，
+              把消息转交给其它线程或继续 fire 时要先 retain。
+
+    第七步：按需扩展
+        handler：IdleStateHandler（ReaderIdleTimeoutTask / WriterIdleTimeoutTask）、SslHandler、ChunkedWriteHandler。
+        协议：需要网页客户端时读 netty-codec-http 的 websocketx 包。
+        平台：部署到 Linux 并想用原生传输时，再看 epoll 与 native-unix-common。
+
+
+十、查阅与核对方式
+
+    查看实际解析的 Netty 依赖（在项目根目录执行）：
+        mvn dependency:tree "-Dincludes=io.netty:*"
+
+    在 IDEA 中：Maven 面板 → Download Sources，之后 Ctrl + 点击类名即可进入 4.1.115.Final 的源码。
+
+    参考：
+        Spring Boot 3.2.12 依赖版本表：
+        https://docs.spring.io/spring-boot/docs/3.2.12/reference/html/dependency-versions.html
+
+        本文对应的源码（GitHub tag）：
+        https://github.com/netty/netty/tree/netty-4.1.115.Final
+
+        Netty 4.1 API 文档：
+        https://netty.io/4.1/api/index.html
